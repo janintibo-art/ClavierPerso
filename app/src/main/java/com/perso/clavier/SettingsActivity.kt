@@ -57,6 +57,30 @@ class SettingsActivity : Activity() {
         override fun onEnter() {
             testField.append("\n")
         }
+
+        override fun onEmojiToggle() {
+            Toast.makeText(this@SettingsActivity, "Les emojis s'ouvrent dans le vrai clavier", Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onPaste() {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = cm.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                testField.append(clip.getItemAt(0).coerceToText(this@SettingsActivity))
+            }
+        }
+
+        override fun onSettings() {}
+
+        override fun onLangSwitch() {
+            prefs.langIndex = (prefs.langIndex + 1) % Layouts.languages.size
+            preview.refresh()
+            Toast.makeText(this@SettingsActivity, Layouts.languages[prefs.langIndex], Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onSuggestion(word: String) {
+            testField.append(word + " ")
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,7 +100,7 @@ class SettingsActivity : Activity() {
             setTextColor(Color.parseColor("#202124"))
         })
         root.addView(TextView(this).apply {
-            text = "Personnalise ton clavier et regarde l'aperçu changer en direct ✨"
+            text = "Suggestions, emojis, presse-papiers, 3 langues, et tout est personnalisable"
             textSize = 14f
             setTextColor(Color.parseColor("#5F6368"))
             setPadding(0, dp(6), 0, dp(16))
@@ -150,8 +174,43 @@ class SettingsActivity : Activity() {
             preview.refresh()
         })
 
+        // ----- Langue -----
+        root.addView(section("Langue du clavier"))
+        val langRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        Layouts.languages.forEachIndexed { index, name ->
+            langRow.addView(TextView(this).apply {
+                text = name
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                background = rounded(Color.parseColor(if (index == prefs.langIndex) "#4A6CF7" else "#9AA0A6"))
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                if (index > 0) lp.leftMargin = dp(8)
+                layoutParams = lp
+                setOnClickListener {
+                    prefs.langIndex = index
+                    preview.refresh()
+                    for (i in 0 until langRow.childCount) {
+                        (langRow.getChildAt(i) as TextView).background =
+                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"))
+                    }
+                }
+            })
+        }
+        root.addView(langRow)
+        root.addView(hint("Tu peux aussi changer de langue avec la touche du globe sur le clavier."))
+
         // ----- Options -----
         root.addView(section("Options"))
+        root.addView(switchRow("Rangée de chiffres au-dessus des lettres", prefs.numberRow) {
+            prefs.numberRow = it
+            preview.refresh()
+        })
+        root.addView(switchRow("Suggestions de mots", prefs.suggestionsEnabled) {
+            prefs.suggestionsEnabled = it
+        })
         root.addView(switchRow("Vibration des touches", prefs.vibration) {
             prefs.vibration = it
             preview.refresh()

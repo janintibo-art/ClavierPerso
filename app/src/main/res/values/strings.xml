@@ -2,4 +2,6 @@
     <string name="app_name">Clavier Perso</string>
     <string name="ime_name">Clavier Perso</string>
     <string name="subtype_fr">Français (AZERTY)</string>
+    <string name="subtype_en">English (QWERTY)</string>
+    <string name="subtype_es">Español (QWERTY)</string>
 </resources>

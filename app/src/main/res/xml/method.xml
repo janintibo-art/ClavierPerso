@@ -5,4 +5,12 @@
         android:label="@string/subtype_fr"
         android:imeSubtypeLocale="fr"
         android:imeSubtypeMode="keyboard" />
+    <subtype
+        android:label="@string/subtype_en"
+        android:imeSubtypeLocale="en"
+        android:imeSubtypeMode="keyboard" />
+    <subtype
+        android:label="@string/subtype_es"
+        android:imeSubtypeLocale="es"
+        android:imeSubtypeMode="keyboard" />
 </input-method>

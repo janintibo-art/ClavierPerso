@@ -59,6 +59,33 @@ class Prefs(context: Context) {
         get() = sp.getInt("key_opacity", 100)
         set(v) { sp.edit().putInt("key_opacity", v).apply() }
 
+
+    // ----- Langue, chiffres, suggestions -----
+
+    var langIndex: Int
+        get() = sp.getInt("lang", 0)
+        set(v) { sp.edit().putInt("lang", v).apply() }
+
+    var numberRow: Boolean
+        get() = sp.getBoolean("number_row", true)
+        set(v) { sp.edit().putBoolean("number_row", v).apply() }
+
+    var suggestionsEnabled: Boolean
+        get() = sp.getBoolean("suggestions", true)
+        set(v) { sp.edit().putBoolean("suggestions", v).apply() }
+
+    val learnedWords: Set<String>
+        get() = sp.getStringSet("learned", emptySet()) ?: emptySet()
+
+    fun learnWord(w: String) {
+        val word = w.lowercase()
+        val set = HashSet(learnedWords)
+        if (set.size >= 600 && word !in set) return
+        if (set.add(word)) {
+            sp.edit().putStringSet("learned", set).apply()
+        }
+    }
+
     // ----- Options -----
 
     var vibration: Boolean

@@ -22,6 +22,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onText(text: String)
         fun onDelete()
         fun onEnter()
+        fun onEmojiToggle()
+        fun onPaste()
+        fun onSettings()
+        fun onLangSwitch()
+        fun onSuggestion(word: String)
     }
 
     companion object {
@@ -30,45 +35,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_SYM = -3
         const val CODE_SPACE = -4
         const val CODE_ENTER = -5
+        const val CODE_EMOJI = -6
+        const val CODE_PASTE = -7
+        const val CODE_SETTINGS = -8
+        const val CODE_LANG = -9
+        const val CODE_SUG = -11 // -11, -12, -13
         const val BG_FILE = "bg_image"
     }
 
     class Key(val label: String, val code: Int, val weight: Float = 1f)
-
-    private val accents = mapOf(
-        "e" to "é", "a" to "à", "u" to "ù", "i" to "î",
-        "o" to "ô", "c" to "ç", "n" to "ñ", "'" to "\""
-    )
-
-    private val lettersRows: List<List<Key>> = listOf(
-        listOf("a", "z", "e", "r", "t", "y", "u", "i", "o", "p").map { Key(it, it[0].code) },
-        listOf("q", "s", "d", "f", "g", "h", "j", "k", "l", "m").map { Key(it, it[0].code) },
-        listOf(Key("⇧", CODE_SHIFT, 1.4f)) +
-                listOf("w", "x", "c", "v", "b", "n", "'").map { Key(it, it[0].code) } +
-                listOf(Key("⌫", CODE_DEL, 1.4f)),
-        listOf(
-            Key("?123", CODE_SYM, 1.6f),
-            Key(",", ','.code),
-            Key("Espace", CODE_SPACE, 4.2f),
-            Key(".", '.'.code),
-            Key("⏎", CODE_ENTER, 1.6f)
-        )
-    )
-
-    private val symbolsRows: List<List<Key>> = listOf(
-        listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map { Key(it, it[0].code) },
-        listOf("@", "#", "€", "_", "&", "-", "+", "(", ")", "/").map { Key(it, it[0].code) },
-        listOf(Key("=", '='.code, 1.4f)) +
-                listOf("*", "\"", "'", ":", ";", "!", "?").map { Key(it, it[0].code) } +
-                listOf(Key("⌫", CODE_DEL, 1.4f)),
-        listOf(
-            Key("ABC", CODE_SYM, 1.6f),
-            Key(",", ','.code),
-            Key("Espace", CODE_SPACE, 4.2f),
-            Key(".", '.'.code),
-            Key("⏎", CODE_ENTER, 1.6f)
-        )
-    )
 
     private var shift = true
     private var caps = false
@@ -78,7 +53,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var prefs = Prefs(context)
     private var bgBitmap: Bitmap? = null
 
+    var suggestions: List<String> = emptyList()
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val handler = Handler(Looper.getMainLooper())
@@ -122,16 +104,57 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
-    private fun rows() = if (symbols) symbolsRows else lettersRows
+    // ---------- Construction des rangées ----------
+
+    private fun letterKey(s: String) = Key(s, s[0].code)
+
+    private fun bottomRow(): List<Key> = listOf(
+        Key(if (symbols) "ABC" else "?123", CODE_SYM, 1.4f),
+        Key("🌐", CODE_LANG, 1f),
+        Key(",", ','.code, 1f),
+        Key(Layouts.languages[prefs.langIndex.coerceIn(0, 2)], CODE_SPACE, 3.4f),
+        Key(".", '.'.code, 1f),
+        Key("⏎", CODE_ENTER, 1.5f)
+    )
+
+    private fun rows(): List<List<Key>> {
+        if (symbols) {
+            return listOf(
+                listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map { letterKey(it) },
+                listOf("@", "#", "€", "_", "&", "-", "+", "(", ")", "/").map { letterKey(it) },
+                listOf(Key("=", '='.code, 1.4f)) +
+                        listOf("*", "\"", "'", ":", ";", "!", "?").map { letterKey(it) } +
+                        listOf(Key("⌫", CODE_DEL, 1.4f)),
+                bottomRow()
+            )
+        }
+        val lang = prefs.langIndex.coerceIn(0, 2)
+        val base = Layouts.rows(lang)
+        val list = mutableListOf<List<Key>>()
+        if (prefs.numberRow) {
+            list.add(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map { letterKey(it) })
+        }
+        list.add(base[0].map { letterKey(it) })
+        list.add(base[1].map { letterKey(it) })
+        list.add(
+            listOf(Key("⇧", CODE_SHIFT, 1.4f)) +
+                    base[2].map { letterKey(it) } +
+                    listOf(Key("⌫", CODE_DEL, 1.4f))
+        )
+        list.add(bottomRow())
+        return list
+    }
 
     private fun withOpacity(color: Int): Int {
         val a = prefs.keyOpacity.coerceIn(15, 100) * 255 / 100
         return (a shl 24) or (color and 0x00FFFFFF)
     }
 
+    private fun barHeight() = dp(44f)
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = (dp(prefs.keyHeight.toFloat()) * rows().size + dp(14f)).toInt()
+        val h = (barHeight() + dp(prefs.keyHeight.toFloat()) * rows().size + dp(12f)).toInt()
         setMeasuredDimension(w, h)
     }
 
@@ -142,7 +165,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     override fun onDraw(canvas: Canvas) {
-        // Arrière-plan : image ou couleur unie
         val bmp = bgBitmap
         if (bmp != null && width > 0 && height > 0) {
             val scale = maxOf(width / bmp.width.toFloat(), height / bmp.height.toFloat())
@@ -159,12 +181,53 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
         keyRects.clear()
 
+        // ---------- Barre du haut : émoji, coller, suggestions, réglages ----------
+        val barH = barHeight()
+        val slot = dp(44f)
+        val iconSize = sp(19f)
+
+        fun topItem(key: Key, rect: RectF, textSizePx: Float) {
+            keyRects.add(key to rect)
+            if (key === pressedKey) {
+                keyPaint.color = withOpacity(prefs.colorAccent)
+                canvas.drawRoundRect(
+                    RectF(rect.left + dp(3f), rect.top + dp(5f), rect.right - dp(3f), rect.bottom - dp(5f)),
+                    dp(8f), dp(8f), keyPaint
+                )
+            }
+            textPaint.color = if (key === pressedKey) prefs.colorTextOnAccent else prefs.colorText
+            textPaint.textSize = textSizePx
+            val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
+            val label = if (key.label.length > 14) key.label.take(13) + "…" else key.label
+            canvas.drawText(label, rect.centerX(), ty, textPaint)
+        }
+
+        topItem(Key("😀", CODE_EMOJI), RectF(0f, 0f, slot, barH), iconSize)
+        topItem(Key("📋", CODE_PASTE), RectF(slot, 0f, slot * 2, barH), iconSize)
+        topItem(Key("⚙️", CODE_SETTINGS), RectF(width - slot, 0f, width.toFloat(), barH), iconSize)
+
+        val sugLeft = slot * 2
+        val sugRight = width - slot
+        val sugW = (sugRight - sugLeft) / 3f
+        linePaint.color = (0x30 shl 24) or (prefs.colorText and 0xFFFFFF)
+        linePaint.strokeWidth = dp(1f)
+        for (i in 0 until 3) {
+            val r = RectF(sugLeft + sugW * i, 0f, sugLeft + sugW * (i + 1), barH)
+            if (i < suggestions.size) {
+                topItem(Key(suggestions[i], CODE_SUG - i), r, sp(15f))
+            }
+            if (i > 0) canvas.drawLine(r.left, dp(10f), r.left, barH - dp(10f), linePaint)
+        }
+        canvas.drawLine(sugLeft, dp(10f), sugLeft, barH - dp(10f), linePaint)
+        canvas.drawLine(sugRight.toFloat(), dp(10f), sugRight.toFloat(), barH - dp(10f), linePaint)
+
+        // ---------- Touches ----------
         val rowH = dp(prefs.keyHeight.toFloat())
         val margin = dp(3f)
         val sidePad = dp(4f)
         val radius = dp(9f)
         val usable = width - sidePad * 2
-        var y = dp(7f)
+        var y = barH + dp(6f)
 
         for (row in rows()) {
             val totalW = row.map { it.weight }.sum()
@@ -188,7 +251,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
                 textPaint.color = if (isAccent) prefs.colorTextOnAccent else prefs.colorText
                 textPaint.textSize = if (key.label.length > 2)
-                    sp(prefs.textSize * 0.7f) else sp(prefs.textSize.toFloat())
+                    sp(prefs.textSize * 0.62f) else sp(prefs.textSize.toFloat())
                 val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
                 canvas.drawText(displayLabel(key), rect.centerX(), ty, textPaint)
 
@@ -211,7 +274,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private val accentRunnable = Runnable {
         val key = pressedKey ?: return@Runnable
-        val acc = accents[key.label] ?: return@Runnable
+        val acc = Layouts.accents(prefs.langIndex.coerceIn(0, 2))[key.label] ?: return@Runnable
         longPressConsumed = true
         val t = if (shift || caps) acc.uppercase() else acc
         listener.onText(t)
@@ -228,7 +291,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 feedback()
                 if (key.code == CODE_DEL) {
                     handler.postDelayed(repeatDelete, 400)
-                } else if (key.code >= 0 && !symbols && accents.containsKey(key.label)) {
+                } else if (key.code >= 0 && !symbols &&
+                    Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label)
+                ) {
                     handler.postDelayed(accentRunnable, 380)
                 }
                 invalidate()
@@ -249,20 +314,25 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun handleKey(key: Key) {
-        when (key.code) {
-            CODE_SHIFT -> {
+        when {
+            key.code <= CODE_SUG -> listener.onSuggestion(key.label)
+            key.code == CODE_SHIFT -> {
                 val now = System.currentTimeMillis()
                 when {
                     caps -> { caps = false; shift = false }
-                    now - lastShiftTap < 300 -> { caps = true; shift = false }
+                    now - lastShiftTap < 500 -> { caps = true; shift = false }
                     else -> shift = !shift
                 }
                 lastShiftTap = now
             }
-            CODE_DEL -> listener.onDelete()
-            CODE_SYM -> symbols = !symbols
-            CODE_SPACE -> listener.onText(" ")
-            CODE_ENTER -> listener.onEnter()
+            key.code == CODE_DEL -> listener.onDelete()
+            key.code == CODE_SYM -> symbols = !symbols
+            key.code == CODE_SPACE -> listener.onText(" ")
+            key.code == CODE_ENTER -> listener.onEnter()
+            key.code == CODE_EMOJI -> listener.onEmojiToggle()
+            key.code == CODE_PASTE -> listener.onPaste()
+            key.code == CODE_SETTINGS -> listener.onSettings()
+            key.code == CODE_LANG -> listener.onLangSwitch()
             else -> {
                 var t = key.label
                 if (!symbols && (shift || caps)) t = t.uppercase()
@@ -271,6 +341,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
         }
         invalidate()
+        requestLayout()
     }
 
     private fun feedback() {
