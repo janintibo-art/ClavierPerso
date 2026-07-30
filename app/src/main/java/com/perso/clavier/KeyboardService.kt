@@ -297,8 +297,16 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     // ---------- Suggestions ----------
 
     private fun currentPrefix(): String {
-        val before = currentInputConnection?.getTextBeforeCursor(48, 0)?.toString() ?: return ""
-        return before.takeLastWhile { it.isLetter() }
+        val before = currentInputConnection?.getTextBeforeCursor(64, 0)?.toString() ?: return ""
+        return before.takeLastWhile { it.isLetter() || it == '\'' || it == '-' }
+    }
+
+    /** Dernier mot complet avant celui en cours d'ecriture. */
+    private fun previousWord(): String {
+        val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString() ?: return ""
+        val trimmed = before.dropLastWhile { it.isLetter() || it == '\'' || it == '-' }
+        if (trimmed.length == before.length && before.isNotEmpty() && before.last().isLetter()) return ""
+        return trimmed.trimEnd().takeLastWhile { it.isLetter() || it == '\'' || it == '-' }.lowercase()
     }
 
     private var suggestionSeq = 0
@@ -310,15 +318,16 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
         val prefix = currentPrefix()
-        if (prefix.length < 2) {
+        val prev = previousWord()
+        if (prefix.isEmpty() && prev.isEmpty()) {
             kb.suggestions = emptyList()
             return
         }
         val lang = Prefs(this).langIndex
         val seq = ++suggestionSeq
         thread {
-            var list = Dictionary.suggest(this, lang, prefix)
-            if (prefix.first().isUpperCase()) {
+            var list = Dictionary.suggest(this, lang, prefix, 3, prev)
+            if (prefix.isNotEmpty() && prefix.first().isUpperCase()) {
                 list = list.map { w -> w.replaceFirstChar { it.uppercase() } }
             }
             mainHandler.post {
@@ -328,8 +337,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     private fun learn(word: String) {
-        if (word.length >= 3 && word.all { it.isLetter() }) {
-            Prefs(this).learnWord(word)
+        if (word.length >= 2 && word.all { it.isLetter() || it == '\'' || it == '-' }) {
+            Prefs(this).learnWord(word.lowercase(), previousWord())
         }
     }
 
@@ -393,8 +402,11 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         if (prefix.isNotEmpty()) {
             ic.deleteSurroundingText(prefix.length, 0)
         }
+        val prev = previousWord()
         ic.commitText("$word ", 1)
-        learn(word.lowercase())
+        val prefs = Prefs(this)
+        prefs.learnWord(word.lowercase(), prev)
+        prefs.learnWord(word.lowercase(), prev)
         updateSuggestions()
     }
 

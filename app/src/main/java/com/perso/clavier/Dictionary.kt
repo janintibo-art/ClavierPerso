@@ -80,15 +80,26 @@ object Dictionary {
      * - Si le mot tape est deja correct : on propose surtout des completions.
      * - Sinon : les corrections passent en premier.
      */
-    fun suggest(context: Context, lang: Int, prefix: String, max: Int = 3): List<String> {
-        if (prefix.length < 2) return emptyList()
+    fun suggest(
+        context: Context,
+        lang: Int,
+        prefix: String,
+        max: Int = 3,
+        previousWord: String = ""
+    ): List<String> {
         val l = lang.coerceIn(0, 2)
+        val prefs = Prefs(context)
         val p = normalize(prefix.take(24))
-        if (p.isEmpty()) return emptyList()
+
+        // --- Aucun mot en cours : predire le mot suivant a partir des habitudes ---
+        if (p.isEmpty()) {
+            if (previousWord.isBlank()) return emptyList()
+            return prefs.nextWords(previousWord).take(max)
+        }
 
         val all = entries(context, l)
         val isKnown = known[l]?.contains(p) == true
-        val learned = Prefs(context).learnedWords
+        val counts = prefs.wordCounts()
         val exact = all.firstOrNull { it.norm == p }
 
         // score : plus petit = meilleur
@@ -96,6 +107,7 @@ object Dictionary {
 
         fun offer(word: String, score: Int) {
             if (word.equals(prefix, ignoreCase = true)) return
+            if (word.length < 2) return
             val old = scored[word]
             if (old == null || score < old) scored[word] = score
         }
@@ -112,9 +124,23 @@ object Dictionary {
                 offer(e.word, bonus + (e.norm.length - p.length) * 4 + e.rank / 40)
             }
         }
-        for (w in learned) {
+        // 1 bis. Mots personnels : plus tu les ecris, plus ils remontent (des la 1re lettre)
+        val nextAfterPrev = if (previousWord.isNotBlank()) prefs.nextWords(previousWord) else emptyList()
+        for ((w, count) in counts) {
             val n = normalize(w)
-            if (n.length > p.length && n.startsWith(p)) offer(w, 100)
+            if (n.length >= p.length && n.startsWith(p)) {
+                // Beaucoup ecrit = tres bien classe ; -18 par occurrence, plancher a -260
+                var score = 90 - (count * 18).coerceAtMost(260)
+                // Bonus si ce mot suit habituellement le mot precedent
+                val idx = nextAfterPrev.indexOf(w)
+                if (idx >= 0) score -= (120 - idx * 20)
+                if (n == p) score += 40
+                offer(w, score)
+            }
+        }
+
+        if (p.length < 2) {
+            return scored.entries.sortedBy { it.value }.take(max).map { it.key }
         }
 
         // 2. Corrections (mots proches)

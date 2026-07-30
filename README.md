@@ -3,7 +3,9 @@
 Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 
 ## Écriture
-- Suggestions de mots **avec correcteur d'orthographe** (apprend tes mots)
+- Suggestions de mots **avec correcteur d'orthographe** (dictionnaire de 4600 mots)
+- **Clavier intelligent** : il compte les mots que tu écris et te les propose dès la 1re ou 2e lettre
+- **Prédiction du mot suivant** : après un mot, il propose ce que tu écris habituellement ensuite
 - Rangée de chiffres au-dessus des lettres (option)
 - Accents par appui long (é, à, ù, ç, ñ…)
 - Double appui sur ⇧ = verrouillage majuscule

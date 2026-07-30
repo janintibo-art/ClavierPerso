@@ -250,6 +250,9 @@ class SettingsActivity : Activity() {
         root.addView(switchRow("Suggestions de mots", prefs.suggestionsEnabled) {
             prefs.suggestionsEnabled = it
         })
+        root.addView(switchRow("Clavier intelligent (apprend tes mots)", prefs.learningEnabled) {
+            prefs.learningEnabled = it
+        })
         root.addView(switchRow("Bulle d'aperçu au-dessus de la touche", prefs.keyPopup) {
             prefs.keyPopup = it
             preview.refresh()
@@ -362,6 +365,29 @@ class SettingsActivity : Activity() {
                 override fun beforeTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
             })
+        })
+
+        root.addView(section("Mémoire du clavier 🧠"))
+        val memoryInfo = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#5F6368"))
+            setPadding(dp(4), dp(4), dp(4), dp(2))
+        }
+        fun refreshMemory() {
+            val counts = prefs.wordCounts()
+            val top = counts.entries.sortedByDescending { it.value }.take(8)
+                .joinToString(", ") { it.key + " (" + it.value + ")" }
+            memoryInfo.text = if (counts.isEmpty())
+                "Le clavier n'a encore rien appris. Écris normalement : tes mots seront proposés dès la 1re ou 2e lettre."
+            else
+                counts.size.toString() + " mots appris.\nTes plus utilisés : " + top
+        }
+        refreshMemory()
+        root.addView(memoryInfo)
+        root.addView(button("🗑️ Oublier tous les mots appris") {
+            prefs.forgetLearnedWords()
+            refreshMemory()
+            Toast.makeText(this, "Mémoire effacée", Toast.LENGTH_SHORT).show()
         })
 
         root.addView(section("Hauteur des touches"))

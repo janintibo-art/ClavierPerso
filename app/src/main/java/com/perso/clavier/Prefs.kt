@@ -224,16 +224,82 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("suggestions", true)
         set(v) { sp.edit().putBoolean("suggestions", v).apply() }
 
-    val learnedWords: Set<String>
-        get() = sp.getStringSet("learned", emptySet()) ?: emptySet()
+    // ----- Apprentissage : frequence des mots + mot suivant -----
 
-    fun learnWord(w: String) {
-        val word = w.lowercase()
-        val set = HashSet(learnedWords)
-        if (set.size >= 600 && word !in set) return
-        if (set.add(word)) {
-            sp.edit().putStringSet("learned", set).apply()
+    var learningEnabled: Boolean
+        get() = sp.getBoolean("learning", true)
+        set(v) { sp.edit().putBoolean("learning", v).apply() }
+
+    /** Mot -> nombre de fois ou l'utilisateur l'a ecrit. */
+    fun wordCounts(): Map<String, Int> {
+        return try {
+            val obj = JSONObject(sp.getString("freq", "{}") ?: "{}")
+            val map = HashMap<String, Int>(obj.length())
+            for (k in obj.keys()) map[k] = obj.optInt(k, 1)
+            map
+        } catch (e: Exception) {
+            emptyMap()
         }
+    }
+
+    val learnedWords: Set<String>
+        get() = wordCounts().keys
+
+    /** Enregistre un mot ecrit par l'utilisateur (et le lien avec le mot precedent). */
+    fun learnWord(word: String, previous: String? = null) {
+        if (!learningEnabled) return
+        val w = word.trim()
+        if (w.length < 2 || w.length > 30) return
+        try {
+            val obj = JSONObject(sp.getString("freq", "{}") ?: "{}")
+            val count = obj.optInt(w, 0) + 1
+            obj.put(w, count)
+            // Elagage : on retire les mots vus une seule fois quand c'est trop gros
+            if (obj.length() > 1200) {
+                val rares = obj.keys().asSequence().filter { obj.optInt(it, 0) <= 1 }.toList()
+                rares.take(400).forEach { obj.remove(it) }
+            }
+            val e = sp.edit().putString("freq", obj.toString())
+
+            if (!previous.isNullOrBlank() && previous.length >= 2) {
+                val big = JSONObject(sp.getString("bigrams", "{}") ?: "{}")
+                val key = previous.lowercase()
+                val nexts = big.optJSONObject(key) ?: JSONObject()
+                nexts.put(w, nexts.optInt(w, 0) + 1)
+                // Garder au maximum 6 suites par mot
+                if (nexts.length() > 6) {
+                    val worst = nexts.keys().asSequence().minByOrNull { nexts.optInt(it, 0) }
+                    if (worst != null) nexts.remove(worst)
+                }
+                big.put(key, nexts)
+                if (big.length() > 800) {
+                    val first = big.keys().asSequence().firstOrNull()
+                    if (first != null) big.remove(first)
+                }
+                e.putString("bigrams", big.toString())
+            }
+            e.apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Mots qui suivent souvent [previous], du plus frequent au moins frequent. */
+    fun nextWords(previous: String): List<String> {
+        return try {
+            val big = JSONObject(sp.getString("bigrams", "{}") ?: "{}")
+            val nexts = big.optJSONObject(previous.lowercase()) ?: return emptyList()
+            nexts.keys().asSequence()
+                .map { it to nexts.optInt(it, 0) }
+                .sortedByDescending { it.second }
+                .map { it.first }
+                .toList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun forgetLearnedWords() {
+        sp.edit().remove("freq").remove("bigrams").remove("learned").apply()
     }
 
     // ----- Options -----
