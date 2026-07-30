@@ -27,6 +27,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onSettings()
         fun onLangSwitch()
         fun onGifToggle()
+        fun onTranslateToggle()
         fun onSuggestion(word: String)
     }
 
@@ -41,6 +42,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_SETTINGS = -8
         const val CODE_LANG = -9
         const val CODE_GIF = -10
+        const val CODE_TRANSLATE = -14
         const val CODE_SUG = -11 // -11, -12, -13
         const val BG_FILE = "bg_image"
     }
@@ -54,6 +56,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private var prefs = Prefs(context)
     private var bgBitmap: Bitmap? = null
+
+    var translateMode: String? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     var suggestions: List<String> = emptyList()
         set(value) {
@@ -163,6 +171,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun displayLabel(key: Key): String {
+        if (key.code == CODE_ENTER && translateMode != null) return "➜"
         if (key.code == CODE_SHIFT) return if (caps) "⇪" else "⇧"
         if (key.code >= 0 && !symbols && (shift || caps)) return key.label.uppercase()
         return key.label
@@ -190,16 +199,17 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val slot = dp(44f)
         val iconSize = sp(19f)
 
-        fun topItem(key: Key, rect: RectF, textSizePx: Float) {
+        fun topItem(key: Key, rect: RectF, textSizePx: Float, active: Boolean = false) {
             keyRects.add(key to rect)
-            if (key === pressedKey) {
+            val lit = key === pressedKey || active
+            if (lit) {
                 keyPaint.color = withOpacity(prefs.colorAccent)
                 canvas.drawRoundRect(
                     RectF(rect.left + dp(3f), rect.top + dp(5f), rect.right - dp(3f), rect.bottom - dp(5f)),
                     dp(8f), dp(8f), keyPaint
                 )
             }
-            textPaint.color = if (key === pressedKey) prefs.colorTextOnAccent else prefs.colorText
+            textPaint.color = if (lit) prefs.colorTextOnAccent else prefs.colorText
             textPaint.textSize = textSizePx
             val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
             val label = if (key.label.length > 14) key.label.take(13) + "…" else key.label
@@ -209,19 +219,29 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         topItem(Key("😀", CODE_EMOJI), RectF(0f, 0f, slot, barH), iconSize)
         topItem(Key("GIF", CODE_GIF), RectF(slot, 0f, slot * 2, barH), sp(14f))
         topItem(Key("📋", CODE_PASTE), RectF(slot * 2, 0f, slot * 3, barH), iconSize)
+        topItem(Key("🌍", CODE_TRANSLATE), RectF(slot * 3, 0f, slot * 4, barH), iconSize,
+            active = translateMode != null)
         topItem(Key("⚙️", CODE_SETTINGS), RectF(width - slot, 0f, width.toFloat(), barH), iconSize)
 
-        val sugLeft = slot * 3
+        val sugLeft = slot * 4
         val sugRight = width - slot
         val sugW = (sugRight - sugLeft) / 3f
         linePaint.color = (0x30 shl 24) or (prefs.colorText and 0xFFFFFF)
         linePaint.strokeWidth = dp(1f)
-        for (i in 0 until 3) {
-            val r = RectF(sugLeft + sugW * i, 0f, sugLeft + sugW * (i + 1), barH)
-            if (i < suggestions.size) {
-                topItem(Key(suggestions[i], CODE_SUG - i), r, sp(15f))
+        val tm = translateMode
+        if (tm != null) {
+            topItem(
+                Key("➜ $tm", CODE_TRANSLATE),
+                RectF(sugLeft, 0f, sugRight.toFloat(), barH), sp(15f), active = true
+            )
+        } else {
+            for (i in 0 until 3) {
+                val r = RectF(sugLeft + sugW * i, 0f, sugLeft + sugW * (i + 1), barH)
+                if (i < suggestions.size) {
+                    topItem(Key(suggestions[i], CODE_SUG - i), r, sp(15f))
+                }
+                if (i > 0) canvas.drawLine(r.left, dp(10f), r.left, barH - dp(10f), linePaint)
             }
-            if (i > 0) canvas.drawLine(r.left, dp(10f), r.left, barH - dp(10f), linePaint)
         }
         canvas.drawLine(sugLeft, dp(10f), sugLeft, barH - dp(10f), linePaint)
         canvas.drawLine(sugRight.toFloat(), dp(10f), sugRight.toFloat(), barH - dp(10f), linePaint)
@@ -371,6 +391,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             key.code == CODE_SETTINGS -> listener.onSettings()
             key.code == CODE_LANG -> listener.onLangSwitch()
             key.code == CODE_GIF -> listener.onGifToggle()
+            key.code == CODE_TRANSLATE -> listener.onTranslateToggle()
             else -> {
                 var t = key.label
                 if (!symbols && (shift || caps)) t = t.uppercase()

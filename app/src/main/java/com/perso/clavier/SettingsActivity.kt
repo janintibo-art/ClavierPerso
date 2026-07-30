@@ -76,6 +76,10 @@ class SettingsActivity : Activity() {
             Toast.makeText(this@SettingsActivity, "Les GIF s'ouvrent dans le vrai clavier", Toast.LENGTH_SHORT).show()
         }
 
+        override fun onTranslateToggle() {
+            Toast.makeText(this@SettingsActivity, "Le mode traduction s'active dans le vrai clavier", Toast.LENGTH_SHORT).show()
+        }
+
         override fun onLangSwitch() {
             prefs.langIndex = (prefs.langIndex + 1) % Layouts.languages.size
             preview.refresh()

@@ -12,14 +12,19 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
 import android.widget.FrameLayout
 import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.FileProvider
 import java.io.File
+import kotlin.concurrent.thread
 
 class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private var container: FrameLayout? = null
     private var keyboardView: KeyboardView? = null
     private var panel: View? = null
+    private var translateTarget: Pair<String, String>? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreateInputView(): View {
         val frame = FrameLayout(this)
@@ -34,6 +39,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         super.onStartInputView(info, restarting)
         hidePanel()
         keyboardView?.refresh()
+        keyboardView?.translateMode = translateTarget?.second
         keyboardView?.autoShift()
         updateSuggestions()
     }
@@ -87,6 +93,66 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
                 onBack = { hidePanel() }
             )
         )
+    }
+
+    override fun onTranslateToggle() {
+        if (translateTarget != null) {
+            translateTarget = null
+            keyboardView?.translateMode = null
+            Toast.makeText(this, "Mode traduction désactivé", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (panel is TranslatePanel) {
+            hidePanel()
+            return
+        }
+        showPanel(
+            TranslatePanel(
+                this, Prefs(this), panelHeight(),
+                onPick = { code, name ->
+                    translateTarget = code to name
+                    keyboardView?.translateMode = name
+                    hidePanel()
+                    Toast.makeText(
+                        this,
+                        "🌍 Écris ton message puis appuie sur ➜ pour l'envoyer en $name",
+                        Toast.LENGTH_LONG
+                    ).show()
+                },
+                onBack = { hidePanel() }
+            )
+        )
+    }
+
+    private fun sourceLang() = listOf("fr", "en", "es")[Prefs(this).langIndex.coerceIn(0, 2)]
+
+    private fun doTranslate() {
+        val ic = currentInputConnection ?: return
+        val target = translateTarget ?: return
+        val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
+        val full = before + after
+        if (full.isBlank()) {
+            Toast.makeText(this, "Écris d'abord ton message", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "Traduction…", Toast.LENGTH_SHORT).show()
+        thread {
+            val result = Translator.translate(full, target.first, sourceLang())
+            mainHandler.post {
+                if (result == null) {
+                    Toast.makeText(this, "Traduction impossible (connexion ?)", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+                val c = currentInputConnection ?: return@post
+                c.beginBatchEdit()
+                c.deleteSurroundingText(before.length, after.length)
+                c.commitText(result, 1)
+                c.endBatchEdit()
+                sendDefaultEditorAction(true)
+                updateSuggestions()
+            }
+        }
     }
 
     private fun commitGif(file: File) {
@@ -164,6 +230,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onEnter() {
+        if (translateTarget != null) {
+            doTranslate()
+            return
+        }
         learn(currentPrefix())
         val handled = sendDefaultEditorAction(true)
         if (!handled) {
