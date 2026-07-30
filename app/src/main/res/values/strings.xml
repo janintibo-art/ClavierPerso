@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Clavier Perso</string>
+    <string name="ime_name">Clavier Perso</string>
+    <string name="subtype_fr">Français (AZERTY)</string>
+</resources>
