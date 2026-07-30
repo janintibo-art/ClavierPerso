@@ -55,6 +55,10 @@ class Prefs(context: Context) {
         get() = sp.getInt("bg_dim", 30)
         set(v) { sp.edit().putInt("bg_dim", v).apply() }
 
+    var keyPopup: Boolean
+        get() = sp.getBoolean("key_popup", true)
+        set(v) { sp.edit().putBoolean("key_popup", v).apply() }
+
     var keyOpacity: Int
         get() = sp.getInt("key_opacity", 100)
         set(v) { sp.edit().putInt("key_opacity", v).apply() }

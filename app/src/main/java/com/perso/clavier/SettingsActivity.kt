@@ -137,6 +137,7 @@ class SettingsActivity : Activity() {
             addView(preview)
         }
         root.addView(previewCard)
+        preview.suggestions = listOf("bonjour", "bonne", "bonsoir")
 
         // ----- Thèmes prédéfinis -----
         root.addView(section("Thèmes prédéfinis (${Themes.list.size})"))
@@ -210,6 +211,10 @@ class SettingsActivity : Activity() {
         })
         root.addView(switchRow("Suggestions de mots", prefs.suggestionsEnabled) {
             prefs.suggestionsEnabled = it
+        })
+        root.addView(switchRow("Bulle d'aperçu au-dessus de la touche", prefs.keyPopup) {
+            prefs.keyPopup = it
+            preview.refresh()
         })
         root.addView(switchRow("Vibration des touches", prefs.vibration) {
             prefs.vibration = it

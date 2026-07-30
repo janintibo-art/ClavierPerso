@@ -66,6 +66,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val handler = Handler(Looper.getMainLooper())
 
     private var pressedKey: Key? = null
+    private var flashKey: Key? = null
+    private var flashUntil = 0L
     private var longPressConsumed = false
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
 
@@ -229,6 +231,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val usable = width - sidePad * 2
         var y = barH + dp(6f)
 
+        val now = System.currentTimeMillis()
+        val flashing = flashKey != null && now < flashUntil
         for (row in rows()) {
             val totalW = row.map { it.weight }.sum()
             var x = sidePad
@@ -238,6 +242,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 keyRects.add(key to rect)
 
                 val isAccent = key === pressedKey ||
+                        (flashing && key === flashKey) ||
                         key.code == CODE_ENTER ||
                         (key.code == CODE_SHIFT && (shift || caps))
                 keyPaint.color = withOpacity(
@@ -258,6 +263,31 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 x += kw
             }
             y += rowH
+        }
+
+        // Bulle d'apercu au-dessus de la touche pressee
+        val pk = pressedKey
+        if (pk != null && pk.code >= 0 && prefs.keyPopup) {
+            val rect = keyRects.firstOrNull { it.first === pk }?.second
+            if (rect != null) {
+                val bw = maxOf(rect.width() * 1.25f, dp(46f))
+                val bh = dp(prefs.keyHeight.toFloat())
+                val cx = rect.centerX().coerceIn(bw / 2, width - bw / 2)
+                var bottom = rect.top - dp(4f)
+                var top = bottom - bh
+                if (top < 0f) { top = 0f; bottom = bh }
+                val bubble = RectF(cx - bw / 2, top, cx + bw / 2, bottom)
+                keyPaint.color = prefs.colorAccent
+                canvas.drawRoundRect(bubble, dp(10f), dp(10f), keyPaint)
+                textPaint.color = prefs.colorTextOnAccent
+                textPaint.textSize = sp(prefs.textSize * 1.35f)
+                val ty = bubble.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
+                canvas.drawText(displayLabel(pk), bubble.centerX(), ty, textPaint)
+            }
+        }
+
+        if (flashing) {
+            postInvalidateDelayed(flashUntil - now + 20)
         }
     }
 
@@ -302,6 +332,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 handler.removeCallbacksAndMessages(null)
                 val key = pressedKey
                 pressedKey = null
+                if (key != null) {
+                    flashKey = key
+                    flashUntil = System.currentTimeMillis() + 160
+                }
                 invalidate()
                 if (key != null && !longPressConsumed &&
                     event.actionMasked == MotionEvent.ACTION_UP
