@@ -273,7 +273,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         return (a shl 24) or (color and 0x00FFFFFF)
     }
 
-    private fun barHeight() = dp(44f)
+    private fun toolsHeight() = dp(40f)
+    private fun sugHeight() = if (prefs.suggestionsEnabled || translateMode != null) dp(42f) else 0f
+    private fun barHeight() = toolsHeight() + sugHeight()
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
@@ -324,57 +326,81 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
         keyRects.clear()
 
-        // ---------- Barre du haut : émoji, coller, suggestions, réglages ----------
-        val barH = barHeight()
-        val slot = dp(44f)
-        val iconSize = sp(19f)
+        // ---------- Barre 1 : outils ----------
+        val toolsH = toolsHeight()
+        val sugH = sugHeight()
 
+        /** Dessine un element de barre en ajustant le texte a la largeur disponible. */
         fun topItem(key: Key, rect: RectF, textSizePx: Float, active: Boolean = false) {
             keyRects.add(key to rect)
             val lit = key === pressedKey || active
             if (lit) {
                 keyPaint.color = withOpacity(prefs.colorAccent)
                 canvas.drawRoundRect(
-                    RectF(rect.left + dp(3f), rect.top + dp(5f), rect.right - dp(3f), rect.bottom - dp(5f)),
+                    RectF(rect.left + dp(3f), rect.top + dp(4f), rect.right - dp(3f), rect.bottom - dp(4f)),
                     dp(8f), dp(8f), keyPaint
                 )
             }
             textPaint.color = if (lit) prefs.colorTextOnAccent else prefs.colorText
-            textPaint.textSize = textSizePx
+
+            // Reduire puis tronquer pour ne jamais deborder sur le voisin
+            val avail = rect.width() - dp(8f)
+            var size = textSizePx
+            textPaint.textSize = size
+            var label = key.label
+            while (textPaint.measureText(label) > avail && size > textSizePx * 0.7f) {
+                size -= dp(0.7f)
+                textPaint.textSize = size
+            }
+            if (textPaint.measureText(label) > avail) {
+                while (label.length > 1 && textPaint.measureText(label + "…") > avail) {
+                    label = label.dropLast(1)
+                }
+                label += "…"
+            }
             val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
-            val label = if (key.label.length > 14) key.label.take(13) + "…" else key.label
             canvas.drawText(label, rect.centerX(), ty, textPaint)
         }
 
-        topItem(Key("😀", CODE_EMOJI), RectF(0f, 0f, slot, barH), iconSize)
-        topItem(Key("GIF", CODE_GIF), RectF(slot, 0f, slot * 2, barH), sp(14f))
-        topItem(Key("📋", CODE_PASTE), RectF(slot * 2, 0f, slot * 3, barH), iconSize)
-        topItem(Key("🌍", CODE_TRANSLATE), RectF(slot * 3, 0f, slot * 4, barH), iconSize,
-            active = translateMode != null)
-        topItem(Key("⚙️", CODE_SETTINGS), RectF(width - slot, 0f, width.toFloat(), barH), iconSize)
+        val tools = listOf(
+            Key("😀", CODE_EMOJI),
+            Key("GIF", CODE_GIF),
+            Key("📋", CODE_PASTE),
+            Key("🌍", CODE_TRANSLATE),
+            Key("⚙️", CODE_SETTINGS)
+        )
+        val toolW = width / tools.size.toFloat()
+        tools.forEachIndexed { i, key ->
+            val r = RectF(toolW * i, 0f, toolW * (i + 1), toolsH)
+            val size = if (key.label == "GIF") sp(14f) else sp(18f)
+            topItem(key, r, size, active = key.code == CODE_TRANSLATE && translateMode != null)
+        }
 
-        val sugLeft = slot * 4
-        val sugRight = width - slot
-        val sugW = (sugRight - sugLeft) / 3f
-        linePaint.color = (0x30 shl 24) or (prefs.colorText and 0xFFFFFF)
+        linePaint.color = (0x28 shl 24) or (prefs.colorText and 0xFFFFFF)
         linePaint.strokeWidth = dp(1f)
-        val tm = translateMode
-        if (tm != null) {
-            topItem(
-                Key("➜ $tm", CODE_TRANSLATE),
-                RectF(sugLeft, 0f, sugRight.toFloat(), barH), sp(15f), active = true
-            )
-        } else {
-            for (i in 0 until 3) {
-                val r = RectF(sugLeft + sugW * i, 0f, sugLeft + sugW * (i + 1), barH)
-                if (i < suggestions.size) {
-                    topItem(Key(suggestions[i], CODE_SUG - i), r, sp(15f))
+
+        // ---------- Barre 2 : suggestions (pleine largeur) ----------
+        if (sugH > 0f) {
+            canvas.drawLine(dp(10f), toolsH, width - dp(10f), toolsH, linePaint)
+            val tm = translateMode
+            if (tm != null) {
+                topItem(
+                    Key("➜ Traduire en $tm", CODE_TRANSLATE),
+                    RectF(0f, toolsH, width.toFloat(), toolsH + sugH), sp(15f), active = true
+                )
+            } else {
+                val sugW = width / 3f
+                for (i in 0 until 3) {
+                    val r = RectF(sugW * i, toolsH, sugW * (i + 1), toolsH + sugH)
+                    if (i < suggestions.size) {
+                        topItem(Key(suggestions[i], CODE_SUG - i), r, sp(15f))
+                    }
+                    if (i > 0 && suggestions.size > i) {
+                        canvas.drawLine(r.left, toolsH + dp(9f), r.left, toolsH + sugH - dp(9f), linePaint)
+                    }
                 }
-                if (i > 0) canvas.drawLine(r.left, dp(10f), r.left, barH - dp(10f), linePaint)
             }
         }
-        canvas.drawLine(sugLeft, dp(10f), sugLeft, barH - dp(10f), linePaint)
-        canvas.drawLine(sugRight.toFloat(), dp(10f), sugRight.toFloat(), barH - dp(10f), linePaint)
 
         // ---------- Touches ----------
         val rowH = dp(prefs.keyHeight.toFloat())
@@ -382,7 +408,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val sidePad = dp(4f)
         val radius = dp(9f)
         val usable = width - sidePad * 2
-        var y = barH + dp(6f)
+        var y = barHeight() + dp(4f)
 
         val now = System.currentTimeMillis()
         val flashing = flashKey != null && now < flashUntil

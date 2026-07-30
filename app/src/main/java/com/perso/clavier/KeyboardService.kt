@@ -301,6 +301,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         return before.takeLastWhile { it.isLetter() }
     }
 
+    private var suggestionSeq = 0
+
     private fun updateSuggestions() {
         val kb = keyboardView ?: return
         if (!Prefs(this).suggestionsEnabled) {
@@ -308,11 +310,21 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
         val prefix = currentPrefix()
-        var list = Dictionary.suggest(this, Prefs(this).langIndex, prefix)
-        if (prefix.isNotEmpty() && prefix.first().isUpperCase()) {
-            list = list.map { w -> w.replaceFirstChar { it.uppercase() } }
+        if (prefix.length < 2) {
+            kb.suggestions = emptyList()
+            return
         }
-        kb.suggestions = list
+        val lang = Prefs(this).langIndex
+        val seq = ++suggestionSeq
+        thread {
+            var list = Dictionary.suggest(this, lang, prefix)
+            if (prefix.first().isUpperCase()) {
+                list = list.map { w -> w.replaceFirstChar { it.uppercase() } }
+            }
+            mainHandler.post {
+                if (seq == suggestionSeq) keyboardView?.suggestions = list
+            }
+        }
     }
 
     private fun learn(word: String) {

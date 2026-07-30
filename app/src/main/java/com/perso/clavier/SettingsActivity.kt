@@ -160,7 +160,7 @@ class SettingsActivity : Activity() {
             addView(preview)
         }
         root.addView(previewCard)
-        preview.suggestions = listOf("bonjour", "bonne", "bonsoir")
+        preview.suggestions = listOf("correction", "bonjour", "merci")
 
         // ----- Thèmes prédéfinis -----
         root.addView(section("Thèmes prédéfinis (${Themes.list.size})"))
