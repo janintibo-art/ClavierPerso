@@ -72,6 +72,10 @@ class SettingsActivity : Activity() {
 
         override fun onSettings() {}
 
+        override fun onGifToggle() {
+            Toast.makeText(this@SettingsActivity, "Les GIF s'ouvrent dans le vrai clavier", Toast.LENGTH_SHORT).show()
+        }
+
         override fun onLangSwitch() {
             prefs.langIndex = (prefs.langIndex + 1) % Layouts.languages.size
             preview.refresh()
@@ -94,7 +98,7 @@ class SettingsActivity : Activity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "⌨️ Clavier Perso"
+            text = "Anarchie Clavier"
             textSize = 26f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.parseColor("#202124"))
@@ -223,6 +227,23 @@ class SettingsActivity : Activity() {
         root.addView(switchRow("Son des touches", prefs.sound) {
             prefs.sound = it
             preview.refresh()
+        })
+
+        root.addView(section("GIF"))
+        root.addView(hint("La touche GIF du clavier utilise Tenor. Si la recherche ne fonctionne pas, colle ici une cle API Tenor gratuite (console.cloud.google.com, API Tenor)."))
+        root.addView(EditText(this).apply {
+            hint = "Cle API Tenor (optionnelle)"
+            setText(prefs.tenorKey)
+            background = rounded(Color.WHITE)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            maxLines = 1
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(sq: Editable?) {
+                    prefs.tenorKey = sq.toString().trim()
+                }
+                override fun beforeTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
         })
 
         root.addView(section("Hauteur des touches"))

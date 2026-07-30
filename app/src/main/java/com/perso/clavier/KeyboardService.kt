@@ -1,19 +1,25 @@
 package com.perso.clavier
 
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputContentInfo
 import android.widget.FrameLayout
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 
 class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private var container: FrameLayout? = null
     private var keyboardView: KeyboardView? = null
-    private var emojiPanel: EmojiPanel? = null
+    private var panel: View? = null
 
     override fun onCreateInputView(): View {
         val frame = FrameLayout(this)
@@ -26,10 +32,86 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        hideEmoji()
+        hidePanel()
         keyboardView?.refresh()
         keyboardView?.autoShift()
         updateSuggestions()
+    }
+
+    // ---------- Panneaux (émojis / GIF) ----------
+
+    private fun panelHeight(): Int {
+        val kb = keyboardView
+        return if (kb != null && kb.height > 0) kb.height
+        else (300 * resources.displayMetrics.density).toInt()
+    }
+
+    private fun showPanel(view: View) {
+        hidePanel()
+        keyboardView?.visibility = View.GONE
+        container?.addView(view)
+        panel = view
+    }
+
+    private fun hidePanel() {
+        val p = panel ?: return
+        container?.removeView(p)
+        panel = null
+        keyboardView?.visibility = View.VISIBLE
+    }
+
+    override fun onEmojiToggle() {
+        if (panel is EmojiPanel) {
+            hidePanel()
+            return
+        }
+        showPanel(
+            EmojiPanel(
+                this, Prefs(this), panelHeight(),
+                onEmoji = { emoji -> currentInputConnection?.commitText(emoji, 1) },
+                onBack = { hidePanel() },
+                onDelete = { onDelete() }
+            )
+        )
+    }
+
+    override fun onGifToggle() {
+        if (panel is GifPanel) {
+            hidePanel()
+            return
+        }
+        showPanel(
+            GifPanel(
+                this, Prefs(this), panelHeight(),
+                onCommit = { file -> commitGif(file) },
+                onBack = { hidePanel() }
+            )
+        )
+    }
+
+    private fun commitGif(file: File) {
+        if (Build.VERSION.SDK_INT < 25) {
+            Toast.makeText(this, "GIF non pris en charge sur cette version d'Android", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val mimeTypes = currentInputEditorInfo?.contentMimeTypes
+        val supported = mimeTypes?.any { ClipDescription.compareMimeTypes("image/gif", it) } == true
+        if (!supported) {
+            Toast.makeText(this, "Cette application n'accepte pas les GIF ici", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val info = InputContentInfo(uri, ClipDescription("GIF", arrayOf("image/gif")))
+            currentInputConnection?.commitContent(
+                info,
+                InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+                null
+            )
+            hidePanel()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Impossible d'envoyer le GIF", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ---------- Suggestions ----------
@@ -128,34 +210,5 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboardView?.refresh()
         updateSuggestions()
         Toast.makeText(this, "🌐 ${Layouts.languages[prefs.langIndex]}", Toast.LENGTH_SHORT).show()
-    }
-
-    // ---------- Émojis ----------
-
-    override fun onEmojiToggle() {
-        if (emojiPanel != null) {
-            hideEmoji()
-            return
-        }
-        val frame = container ?: return
-        val kb = keyboardView ?: return
-        val h = if (kb.height > 0) kb.height
-        else (300 * resources.displayMetrics.density).toInt()
-        val panel = EmojiPanel(
-            this, Prefs(this), h,
-            onEmoji = { emoji -> currentInputConnection?.commitText(emoji, 1) },
-            onBack = { hideEmoji() },
-            onDelete = { onDelete() }
-        )
-        kb.visibility = View.GONE
-        frame.addView(panel)
-        emojiPanel = panel
-    }
-
-    private fun hideEmoji() {
-        val panel = emojiPanel ?: return
-        container?.removeView(panel)
-        emojiPanel = null
-        keyboardView?.visibility = View.VISIBLE
     }
 }

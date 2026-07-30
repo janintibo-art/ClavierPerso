@@ -26,6 +26,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onPaste()
         fun onSettings()
         fun onLangSwitch()
+        fun onGifToggle()
         fun onSuggestion(word: String)
     }
 
@@ -39,6 +40,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_PASTE = -7
         const val CODE_SETTINGS = -8
         const val CODE_LANG = -9
+        const val CODE_GIF = -10
         const val CODE_SUG = -11 // -11, -12, -13
         const val BG_FILE = "bg_image"
     }
@@ -205,10 +207,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
 
         topItem(Key("😀", CODE_EMOJI), RectF(0f, 0f, slot, barH), iconSize)
-        topItem(Key("📋", CODE_PASTE), RectF(slot, 0f, slot * 2, barH), iconSize)
+        topItem(Key("GIF", CODE_GIF), RectF(slot, 0f, slot * 2, barH), sp(14f))
+        topItem(Key("📋", CODE_PASTE), RectF(slot * 2, 0f, slot * 3, barH), iconSize)
         topItem(Key("⚙️", CODE_SETTINGS), RectF(width - slot, 0f, width.toFloat(), barH), iconSize)
 
-        val sugLeft = slot * 2
+        val sugLeft = slot * 3
         val sugRight = width - slot
         val sugW = (sugRight - sugLeft) / 3f
         linePaint.color = (0x30 shl 24) or (prefs.colorText and 0xFFFFFF)
@@ -367,6 +370,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             key.code == CODE_PASTE -> listener.onPaste()
             key.code == CODE_SETTINGS -> listener.onSettings()
             key.code == CODE_LANG -> listener.onLangSwitch()
+            key.code == CODE_GIF -> listener.onGifToggle()
             else -> {
                 var t = key.label
                 if (!symbols && (shift || caps)) t = t.uppercase()

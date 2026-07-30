@@ -55,6 +55,10 @@ class Prefs(context: Context) {
         get() = sp.getInt("bg_dim", 30)
         set(v) { sp.edit().putInt("bg_dim", v).apply() }
 
+    var tenorKey: String
+        get() = sp.getString("tenor_key", "") ?: ""
+        set(v) { sp.edit().putString("tenor_key", v).apply() }
+
     var keyPopup: Boolean
         get() = sp.getBoolean("key_popup", true)
         set(v) { sp.edit().putBoolean("key_popup", v).apply() }
