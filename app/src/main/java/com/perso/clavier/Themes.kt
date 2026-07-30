@@ -37,7 +37,11 @@ object Themes {
         t("Nuit bleue", "#0D1B2A", "#1B2A41", "#14233A", "#FFC857", "#E0E6F0", "#1B2A41"),
         t("Rouge passion", "#1C0B0E", "#3A171D", "#2A1015", "#E63946", "#FFE5E8"),
         t("Lavande", "#EDE7F6", "#FFFFFF", "#CFC3E8", "#7E57C2", "#2E1A52"),
-        t("Néon vert", "#0B0F0B", "#152015", "#101810", "#39FF14", "#E8FFE3", "#052500")
+        t("Néon vert", "#0B0F0B", "#152015", "#101810", "#39FF14", "#E8FFE3", "#052500"),
+        t("Anarchie", "#0A0A0A", "#1A0E0E", "#140A0A", "#E01B24", "#F5E6E6"),
+        t("Gamer RGB", "#08080C", "#14141C", "#0E0E14", "#FF00E5", "#FFFFFF", "#12000F"),
+        t("Or noir", "#101010", "#1E1E1E", "#171717", "#D4AF37", "#F5E9C8", "#1A1400"),
+        t("Glace", "#DCE9F5", "#FFFFFF", "#C3D9EC", "#0288D1", "#0A2A42")
     )
 
     fun get(index: Int): Theme = list[index.coerceIn(0, list.size - 1)]

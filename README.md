@@ -1,28 +1,41 @@
-# ⌨️ Clavier Perso
+# Ⓐ Anarchie Clavier
 
-Clavier Android AZERTY entièrement personnalisable :
+Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 
-- 16 thèmes de couleurs (Clair, Sombre, AMOLED, Océan, Cyberpunk, Néon vert…)
-- Vibration et son des touches (activables)
-- Hauteur des touches et taille du texte réglables
-- Majuscule / verrouillage majuscule (double appui sur ⇧)
-- Appui long sur les voyelles = accents (é, à, ù, î, ô, ç, ñ)
-- Appui long sur ⌫ = suppression rapide
-- Page symboles / chiffres (?123)
-- Sélectionnable comme clavier par défaut du système
+## Écriture
+- Suggestions de mots **avec correcteur d'orthographe** (apprend tes mots)
+- Rangée de chiffres au-dessus des lettres (option)
+- Accents par appui long (é, à, ù, ç, ñ…)
+- Double appui sur ⇧ = verrouillage majuscule
+- **Glisser sur la barre Espace = déplacer le curseur**
+- **Raccourcis texte** : `slt` + espace → "Salut, ça va ?"
+- **Calculatrice** : tape `12*45` puis `=` → `540`
 
-## Compilation automatique (GitHub Actions)
+## Outils (barre du haut)
+- 😀 Émojis (8 catégories)
+- GIF avec recherche (Tenor)
+- 📋 Coller — **appui long : historique du presse-papiers avec épinglage 📌**
+- 🌍 **Mode traduction** : choisis une langue, écris, appuie sur ➜, le message part traduit (16 langues)
+- ⏎ **appui long : reformulation IA** (plus poli, pro, drôle, court, romantique, correction)
+- ⚙️ Réglages
+- 🌐 Changement de langue (Français / English / Español)
 
-À chaque `git push`, GitHub compile l'APK automatiquement :
+## Personnalisation
+- 20 thèmes prédéfinis
+- Couleur libre pour chaque élément (RVB + hexadécimal)
+- **Couleur et luminosité touche par touche**
+- **Mode RGB animé** : Vague, Respiration, Réactif à la frappe, Cascade (vitesse et intensité réglables)
+- Luminosité globale des touches
+- **Image d'arrière-plan** avec assombrissement, luminosité, saturation et flou
+- Opacité des touches, hauteur, taille du texte
+- Bulle d'aperçu au-dessus de la touche, vibration, son
+- **Aperçu en direct** dans les réglages
 
-1. Onglet **Actions** du dépôt
-2. Ouvrir le dernier workflow **Build APK**
-3. Télécharger l'artifact **ClavierPerso-APK** (zip contenant `app-debug.apk`)
-4. Installer l'APK sur le téléphone (autoriser les sources inconnues)
+## Compilation (GitHub Actions)
+À chaque `git push`, l'APK est compilé automatiquement :
+Onglet **Actions** → dernier workflow **Build APK** → artifact **ClavierPerso-APK**.
 
-## Installation sur le téléphone
-
-1. Ouvrir l'application **Clavier Perso**
-2. Bouton **① Activer le clavier** → activer « Clavier Perso »
-3. Bouton **② Choisir comme clavier par défaut**
-4. Choisir un thème et régler les options 🎨
+## Installation
+1. Ouvrir **Anarchie Clavier**
+2. ① Activer le clavier
+3. ② Choisir comme clavier par défaut

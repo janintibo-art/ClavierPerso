@@ -34,6 +34,7 @@ class SettingsActivity : Activity() {
     private lateinit var themesContainer: LinearLayout
     private lateinit var colorsContainer: LinearLayout
     private lateinit var shortcutsContainer: LinearLayout
+    private var keyEditMode = false
     private lateinit var preview: KeyboardView
     private lateinit var testField: EditText
 
@@ -186,9 +187,24 @@ class SettingsActivity : Activity() {
             preview.refresh()
             Toast.makeText(this, "Image retirée", Toast.LENGTH_SHORT).show()
         })
-        root.addView(hint("Assombrir l'image (pour la lisibilité)"))
+        root.addView(hint("Assombrir l'image (voile noir)"))
         root.addView(seek(0, 90, prefs.bgDim) {
             prefs.bgDim = it
+            preview.refresh()
+        })
+        root.addView(hint("Luminosité de l'image"))
+        root.addView(seek(30, 200, prefs.bgBrightness) {
+            prefs.bgBrightness = it
+            preview.refresh()
+        })
+        root.addView(hint("Saturation (0 = noir et blanc)"))
+        root.addView(seek(0, 100, prefs.bgSaturation) {
+            prefs.bgSaturation = it
+            preview.refresh()
+        })
+        root.addView(hint("Flou de l'image"))
+        root.addView(seek(0, 100, prefs.bgBlur) {
+            prefs.bgBlur = it
             preview.refresh()
         })
         root.addView(hint("Opacité des touches (baisse-la pour voir l'image à travers)"))
@@ -245,6 +261,80 @@ class SettingsActivity : Activity() {
         root.addView(switchRow("Son des touches", prefs.sound) {
             prefs.sound = it
             preview.refresh()
+        })
+
+        // ----- Luminosite -----
+        root.addView(section("Luminosité des touches"))
+        root.addView(hint("Assombris ou illumine toutes les touches d'un coup."))
+        root.addView(seek(30, 200, prefs.brightness) {
+            prefs.brightness = it
+            preview.refresh()
+        })
+
+        // ----- Mode RGB -----
+        root.addView(section("Mode RGB 🌈"))
+        root.addView(hint("Comme un vrai clavier gamer : les touches changent de couleur en continu."))
+        val rgbModes = listOf("Éteint", "Vague", "Respiration", "Réactif", "Cascade")
+        val rgbRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        rgbModes.forEachIndexed { index, name ->
+            rgbRow.addView(TextView(this).apply {
+                text = name
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                background = rounded(Color.parseColor(if (index == prefs.rgbMode) "#4A6CF7" else "#9AA0A6"), 10)
+                setPadding(dp(4), dp(10), dp(4), dp(10))
+                val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                if (index > 0) lp.leftMargin = dp(5)
+                layoutParams = lp
+                setOnClickListener {
+                    prefs.rgbMode = index
+                    preview.refresh()
+                    for (i in 0 until rgbRow.childCount) {
+                        (rgbRow.getChildAt(i) as TextView).background =
+                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"), 10)
+                    }
+                }
+            })
+        }
+        root.addView(rgbRow)
+        root.addView(hint("Vitesse de l'animation"))
+        root.addView(seek(10, 200, prefs.rgbSpeed) {
+            prefs.rgbSpeed = it
+            preview.refresh()
+        })
+        root.addView(hint("Intensité des couleurs (0 = couleurs du thème, 100 = arc-en-ciel)"))
+        root.addView(seek(0, 100, prefs.rgbIntensity) {
+            prefs.rgbIntensity = it
+            preview.refresh()
+        })
+        root.addView(switchRow("Le texte suit aussi les couleurs RGB", prefs.rgbText) {
+            prefs.rgbText = it
+            preview.refresh()
+        })
+
+        // ----- Couleur touche par touche -----
+        root.addView(section("Couleur touche par touche"))
+        root.addView(hint("Active le mode édition, puis appuie sur une touche de l'aperçu pour lui donner sa propre couleur et sa luminosité."))
+        val editBtn = button("✏️ Activer le mode édition") { }
+        editBtn.setOnClickListener {
+            keyEditMode = !keyEditMode
+            if (keyEditMode) {
+                preview.editModeListener = { label -> editKeyDialog(label) }
+                editBtn.text = "✅ Mode édition actif — appuie sur une touche"
+                editBtn.background = rounded(Color.parseColor("#0F9D58"))
+            } else {
+                preview.editModeListener = null
+                editBtn.text = "✏️ Activer le mode édition"
+                editBtn.background = rounded(Color.parseColor("#4A6CF7"))
+            }
+        }
+        root.addView(editBtn)
+        root.addView(button("♻️ Réinitialiser toutes les touches") {
+            prefs.clearKeyColors()
+            preview.refresh()
+            Toast.makeText(this, "Couleurs des touches réinitialisées", Toast.LENGTH_SHORT).show()
         })
 
         root.addView(section("Raccourcis texte"))
@@ -544,6 +634,64 @@ class SettingsActivity : Activity() {
                 }
             }
             .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun editKeyDialog(label: String) {
+        val current = prefs.keyColor(label)
+        val items = arrayOf(
+            "🎨 Choisir une couleur pour cette touche",
+            "💡 Régler la luminosité de cette touche",
+            "↩️ Remettre la couleur du thème"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Touche « " + label + " »")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> colorPicker("Couleur de « " + label + " »", current ?: prefs.colorKey) { picked ->
+                        prefs.setKeyColor(label, picked)
+                        preview.refresh()
+                    }
+                    1 -> brightnessDialog(label)
+                    else -> {
+                        prefs.setKeyColor(label, null)
+                        prefs.setKeyBrightness(label, 100)
+                        preview.refresh()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun brightnessDialog(label: String) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        }
+        layout.addView(TextView(this).apply {
+            text = "Sombre  ←→  Lumineux"
+            textSize = 13f
+        })
+        var value = prefs.keyBrightness(label)
+        layout.addView(SeekBar(this).apply {
+            max = 170
+            progress = (value - 30).coerceIn(0, 170)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        value = p + 30
+                        prefs.setKeyBrightness(label, value)
+                        preview.refresh()
+                    }
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+        })
+        AlertDialog.Builder(this)
+            .setTitle("Luminosité de « " + label + " »")
+            .setView(layout)
+            .setPositiveButton("OK", null)
             .show()
     }
 

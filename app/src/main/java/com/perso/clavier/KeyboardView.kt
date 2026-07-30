@@ -14,8 +14,15 @@ import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.renderscript.Allocation
+import android.renderscript.Element
+import android.renderscript.RenderScript
+import android.renderscript.ScriptIntrinsicBlur
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.sin
 
 class KeyboardView(context: Context, private val listener: Listener) : View(context) {
 
@@ -79,6 +86,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val handler = Handler(Looper.getMainLooper())
 
+    /** Quand non nul, un appui sur une touche appelle ce callback au lieu d'ecrire (mode edition couleur). */
+    var editModeListener: ((String) -> Unit)? = null
+
+    private val startTime = System.currentTimeMillis()
+    private var animating = false
+    private val pressTimes = HashMap<String, Long>()
+
     private var pressedKey: Key? = null
     private var downX = 0f
     private var spaceCursor = false
@@ -107,13 +121,50 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     var sample = 1
                     while (opts.outWidth / sample > 1440) sample *= 2
                     val opts2 = BitmapFactory.Options().apply { inSampleSize = sample }
-                    bgBitmap = BitmapFactory.decodeFile(f.absolutePath, opts2)
+                    var bmp = BitmapFactory.decodeFile(f.absolutePath, opts2)
+                    val blur = prefs.bgBlur
+                    if (bmp != null && blur > 0) {
+                        bmp = blurBitmap(bmp, blur)
+                    }
+                    bgBitmap = bmp
                 } catch (_: Exception) {
                 }
             }
         }
         requestLayout()
         invalidate()
+    }
+
+    private fun blurBitmap(src: Bitmap, amount: Int): Bitmap {
+        return try {
+            val radius = (amount / 100f * 24f).coerceIn(1f, 25f)
+            val input = src.copy(Bitmap.Config.ARGB_8888, true) ?: return src
+            val output = Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888)
+            val rs = RenderScript.create(context)
+            val inAlloc = Allocation.createFromBitmap(rs, input)
+            val outAlloc = Allocation.createFromBitmap(rs, output)
+            val script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
+            script.setRadius(radius)
+            script.setInput(inAlloc)
+            script.forEach(outAlloc)
+            outAlloc.copyTo(output)
+            rs.destroy()
+            output
+        } catch (e: Exception) {
+            // Repli universel : reduction puis agrandissement = flou
+            try {
+                val factor = (1 + amount / 12).coerceIn(2, 12)
+                val small = Bitmap.createScaledBitmap(
+                    src,
+                    (src.width / factor).coerceAtLeast(1),
+                    (src.height / factor).coerceAtLeast(1),
+                    true
+                )
+                Bitmap.createScaledBitmap(small, src.width, src.height, true)
+            } catch (e2: Exception) {
+                src
+            }
+        }
     }
 
     fun autoShift() {
@@ -164,6 +215,59 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         return list
     }
 
+    /** Applique un facteur de luminosite (100 = inchange). */
+    private fun applyBrightness(color: Int, percent: Int): Int {
+        if (percent == 100) return color
+        val f = percent / 100f
+        return Color.argb(
+            Color.alpha(color),
+            (Color.red(color) * f).toInt().coerceIn(0, 255),
+            (Color.green(color) * f).toInt().coerceIn(0, 255),
+            (Color.blue(color) * f).toInt().coerceIn(0, 255)
+        )
+    }
+
+    private fun mix(a: Int, b: Int, ratio: Float): Int {
+        val r = ratio.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(a) * (1 - r) + Color.red(b) * r).toInt(),
+            (Color.green(a) * (1 - r) + Color.green(b) * r).toInt(),
+            (Color.blue(a) * (1 - r) + Color.blue(b) * r).toInt()
+        )
+    }
+
+    /** Couleur RGB animee pour une touche, ou null si le mode RGB est desactive. */
+    private fun rgbColor(base: Int, label: String, rect: RectF, rowIndex: Int): Int? {
+        val mode = prefs.rgbMode
+        if (mode == 0) return null
+        val t = (System.currentTimeMillis() - startTime) / 1000.0
+        val speed = prefs.rgbSpeed / 100.0
+        val hue: Float
+        var value = 1f
+        when (mode) {
+            1 -> { // Vague arc-en-ciel horizontale
+                val pos = if (width > 0) rect.centerX() / width else 0f
+                hue = (((t * speed * 60) + pos * 360) % 360).toFloat()
+            }
+            2 -> { // Respiration : toutes les touches ensemble
+                hue = ((t * speed * 40) % 360).toFloat()
+                value = (0.55 + 0.45 * sin(t * speed * 2.2)).toFloat()
+            }
+            3 -> { // Reactif : la touche s'illumine quand on la frappe
+                val pos = if (width > 0) rect.centerX() / width else 0f
+                hue = (((t * speed * 30) + pos * 200) % 360).toFloat()
+                val last = pressTimes[label]
+                val age = if (last == null) 9999L else System.currentTimeMillis() - last
+                value = if (age < 700) (0.35f + 0.65f * (1f - age / 700f)) else 0.35f
+            }
+            else -> { // Cascade verticale
+                hue = (((t * speed * 60) + rowIndex * 45) % 360).toFloat()
+            }
+        }
+        val rainbow = Color.HSVToColor(floatArrayOf(hue, 0.85f, value.coerceIn(0.15f, 1f)))
+        return mix(base, rainbow, prefs.rgbIntensity / 100f)
+    }
+
     private fun withOpacity(color: Int): Int {
         val a = prefs.keyOpacity.coerceIn(15, 100) * 255 / 100
         return (a shl 24) or (color and 0x00FFFFFF)
@@ -193,7 +297,26 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             val sx = (bmp.width - sw) / 2f
             val sy = (bmp.height - sh) / 2f
             val src = Rect(sx.toInt(), sy.toInt(), (sx + sw).toInt(), (sy + sh).toInt())
-            canvas.drawBitmap(bmp, src, Rect(0, 0, width, height), null)
+            val bgPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+            val br = prefs.bgBrightness / 100f
+            val sat = prefs.bgSaturation / 100f
+            if (br != 1f || sat != 1f) {
+                val cm = ColorMatrix()
+                cm.setSaturation(sat)
+                if (br != 1f) {
+                    val scale = ColorMatrix(
+                        floatArrayOf(
+                            br, 0f, 0f, 0f, 0f,
+                            0f, br, 0f, 0f, 0f,
+                            0f, 0f, br, 0f, 0f,
+                            0f, 0f, 0f, 1f, 0f
+                        )
+                    )
+                    cm.postConcat(scale)
+                }
+                bgPaint.colorFilter = ColorMatrixColorFilter(cm)
+            }
+            canvas.drawBitmap(bmp, src, Rect(0, 0, width, height), bgPaint)
             canvas.drawColor(Color.argb(prefs.bgDim.coerceIn(0, 90) * 255 / 100, 0, 0, 0))
         } else {
             canvas.drawColor(prefs.colorBg)
@@ -263,6 +386,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
         val now = System.currentTimeMillis()
         val flashing = flashKey != null && now < flashUntil
+        var rowIndex = 0
         for (row in rows()) {
             val totalW = row.map { it.weight }.sum()
             var x = sidePad
@@ -275,16 +399,28 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                         (flashing && key === flashKey) ||
                         key.code == CODE_ENTER ||
                         (key.code == CODE_SHIFT && (shift || caps))
-                keyPaint.color = withOpacity(
-                    when {
-                        isAccent -> prefs.colorAccent
-                        key.code < 0 -> prefs.colorSpecial
-                        else -> prefs.colorKey
-                    }
-                )
+                var base = when {
+                    isAccent -> prefs.colorAccent
+                    key.code < 0 -> prefs.colorSpecial
+                    else -> prefs.colorKey
+                }
+                // Couleur specifique a cette touche
+                prefs.keyColor(key.label)?.let { if (!isAccent) base = it }
+                // Animation RGB
+                val rgb = if (!isAccent) rgbColor(base, key.label, rect, rowIndex) else null
+                if (rgb != null) base = rgb
+                // Luminosite : globale x luminosite propre a la touche
+                val bright = prefs.brightness * prefs.keyBrightness(key.label) / 100
+                base = applyBrightness(base, bright)
+
+                keyPaint.color = withOpacity(base)
                 canvas.drawRoundRect(rect, radius, radius, keyPaint)
 
-                textPaint.color = if (isAccent) prefs.colorTextOnAccent else prefs.colorText
+                textPaint.color = when {
+                    isAccent -> prefs.colorTextOnAccent
+                    rgb != null && prefs.rgbText -> rgb
+                    else -> prefs.colorText
+                }
                 textPaint.textSize = if (key.label.length > 2)
                     sp(prefs.textSize * 0.62f) else sp(prefs.textSize.toFloat())
                 val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
@@ -293,6 +429,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 x += kw
             }
             y += rowH
+            rowIndex++
         }
 
         // Bulle d'apercu au-dessus de la touche pressee
@@ -318,6 +455,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
         if (flashing) {
             postInvalidateDelayed(flashUntil - now + 20)
+        }
+
+        // Animation continue quand le mode RGB est actif
+        if (prefs.rgbMode != 0 && isShown) {
+            animating = true
+            postInvalidateDelayed(40)
+        } else {
+            animating = false
         }
     }
 
@@ -360,6 +505,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 val key = keyAt(event.x, event.y) ?: return true
+                val edit = editModeListener
+                if (edit != null) {
+                    pressedKey = key
+                    invalidate()
+                    return true
+                }
+                pressTimes[key.label] = System.currentTimeMillis()
                 pressedKey = key
                 downX = event.x
                 spaceCursor = false
@@ -397,6 +549,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val edit = editModeListener
+                if (edit != null) {
+                    val k = pressedKey
+                    pressedKey = null
+                    invalidate()
+                    if (k != null && event.actionMasked == MotionEvent.ACTION_UP) edit(k.label)
+                    return true
+                }
                 handler.removeCallbacksAndMessages(null)
                 val key = pressedKey
                 pressedKey = null

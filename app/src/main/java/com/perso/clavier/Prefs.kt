@@ -47,6 +47,77 @@ class Prefs(context: Context) {
         colorTextOnAccent = t.textOnAccent
     }
 
+    // ----- Couleurs par touche -----
+
+    /** Couleur specifique d'une touche, ou null si elle suit la couleur generale. */
+    fun keyColor(label: String): Int? {
+        val v = sp.getInt("kc_" + label, 0)
+        return if (v == 0) null else v
+    }
+
+    fun setKeyColor(label: String, color: Int?) {
+        val e = sp.edit()
+        if (color == null) e.remove("kc_" + label) else e.putInt("kc_" + label, color)
+        e.apply()
+    }
+
+    fun clearKeyColors() {
+        val e = sp.edit()
+        sp.all.keys.filter { it.startsWith("kc_") || it.startsWith("kb_") }.forEach { e.remove(it) }
+        e.apply()
+    }
+
+    /** Luminosite d'une touche : 50 = moitie, 100 = normal, 200 = double. */
+    fun keyBrightness(label: String): Int = sp.getInt("kb_" + label, 100)
+
+    fun setKeyBrightness(label: String, value: Int) {
+        sp.edit().putInt("kb_" + label, value).apply()
+    }
+
+    // ----- Luminosite globale -----
+
+    /** Luminosite des touches (30 a 200, 100 = normal). */
+    var brightness: Int
+        get() = sp.getInt("brightness", 100)
+        set(v) { sp.edit().putInt("brightness", v).apply() }
+
+    /** Luminosite de l'image de fond (30 a 200, 100 = normal). */
+    var bgBrightness: Int
+        get() = sp.getInt("bg_brightness", 100)
+        set(v) { sp.edit().putInt("bg_brightness", v).apply() }
+
+    /** Flou de l'image de fond (0 a 100). */
+    var bgBlur: Int
+        get() = sp.getInt("bg_blur", 0)
+        set(v) { sp.edit().putInt("bg_blur", v).apply() }
+
+    /** Saturation de l'image de fond (0 = noir et blanc, 100 = normal). */
+    var bgSaturation: Int
+        get() = sp.getInt("bg_saturation", 100)
+        set(v) { sp.edit().putInt("bg_saturation", v).apply() }
+
+    // ----- Mode RGB -----
+
+    /** 0 = desactive, 1 = vague arc-en-ciel, 2 = respiration, 3 = reactif a la frappe, 4 = cascade */
+    var rgbMode: Int
+        get() = sp.getInt("rgb_mode", 0)
+        set(v) { sp.edit().putInt("rgb_mode", v).apply() }
+
+    /** Vitesse de l'animation RGB (10 a 200). */
+    var rgbSpeed: Int
+        get() = sp.getInt("rgb_speed", 60)
+        set(v) { sp.edit().putInt("rgb_speed", v).apply() }
+
+    /** Intensite du RGB : 0 = couleurs du theme, 100 = arc-en-ciel pur. */
+    var rgbIntensity: Int
+        get() = sp.getInt("rgb_intensity", 70)
+        set(v) { sp.edit().putInt("rgb_intensity", v).apply() }
+
+    /** Le texte des touches suit aussi les couleurs RGB. */
+    var rgbText: Boolean
+        get() = sp.getBoolean("rgb_text", false)
+        set(v) { sp.edit().putBoolean("rgb_text", v).apply() }
+
     // ----- Image d'arrière-plan -----
 
     var bgImageEnabled: Boolean
