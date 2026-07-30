@@ -1,8 +1,12 @@
 package com.perso.clavier
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.media.AudioManager
 import android.os.Handler
@@ -10,6 +14,7 @@ import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import java.io.File
 
 class KeyboardView(context: Context, private val listener: Listener) : View(context) {
 
@@ -25,6 +30,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_SYM = -3
         const val CODE_SPACE = -4
         const val CODE_ENTER = -5
+        const val BG_FILE = "bg_image"
     }
 
     class Key(val label: String, val code: Int, val weight: Float = 1f)
@@ -70,7 +76,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var lastShiftTap = 0L
 
     private var prefs = Prefs(context)
-    private var theme = Themes.get(prefs.themeIndex)
+    private var bgBitmap: Bitmap? = null
 
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
@@ -81,12 +87,30 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var longPressConsumed = false
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
 
+    init {
+        refresh()
+    }
+
     private fun dp(v: Float) = v * resources.displayMetrics.density
     private fun sp(v: Float) = v * resources.displayMetrics.scaledDensity
 
     fun refresh() {
         prefs = Prefs(context)
-        theme = Themes.get(prefs.themeIndex)
+        bgBitmap = null
+        if (prefs.bgImageEnabled) {
+            val f = File(context.filesDir, BG_FILE)
+            if (f.exists()) {
+                try {
+                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(f.absolutePath, opts)
+                    var sample = 1
+                    while (opts.outWidth / sample > 1440) sample *= 2
+                    val opts2 = BitmapFactory.Options().apply { inSampleSize = sample }
+                    bgBitmap = BitmapFactory.decodeFile(f.absolutePath, opts2)
+                } catch (_: Exception) {
+                }
+            }
+        }
         requestLayout()
         invalidate()
     }
@@ -99,6 +123,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun rows() = if (symbols) symbolsRows else lettersRows
+
+    private fun withOpacity(color: Int): Int {
+        val a = prefs.keyOpacity.coerceIn(15, 100) * 255 / 100
+        return (a shl 24) or (color and 0x00FFFFFF)
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
@@ -113,7 +142,21 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(theme.bg)
+        // Arrière-plan : image ou couleur unie
+        val bmp = bgBitmap
+        if (bmp != null && width > 0 && height > 0) {
+            val scale = maxOf(width / bmp.width.toFloat(), height / bmp.height.toFloat())
+            val sw = width / scale
+            val sh = height / scale
+            val sx = (bmp.width - sw) / 2f
+            val sy = (bmp.height - sh) / 2f
+            val src = Rect(sx.toInt(), sy.toInt(), (sx + sw).toInt(), (sy + sh).toInt())
+            canvas.drawBitmap(bmp, src, Rect(0, 0, width, height), null)
+            canvas.drawColor(Color.argb(prefs.bgDim.coerceIn(0, 90) * 255 / 100, 0, 0, 0))
+        } else {
+            canvas.drawColor(prefs.colorBg)
+        }
+
         keyRects.clear()
 
         val rowH = dp(prefs.keyHeight.toFloat())
@@ -134,14 +177,16 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val isAccent = key === pressedKey ||
                         key.code == CODE_ENTER ||
                         (key.code == CODE_SHIFT && (shift || caps))
-                keyPaint.color = when {
-                    isAccent -> theme.accent
-                    key.code < 0 -> theme.special
-                    else -> theme.key
-                }
+                keyPaint.color = withOpacity(
+                    when {
+                        isAccent -> prefs.colorAccent
+                        key.code < 0 -> prefs.colorSpecial
+                        else -> prefs.colorKey
+                    }
+                )
                 canvas.drawRoundRect(rect, radius, radius, keyPaint)
 
-                textPaint.color = if (isAccent) theme.textOnAccent else theme.text
+                textPaint.color = if (isAccent) prefs.colorTextOnAccent else prefs.colorText
                 textPaint.textSize = if (key.label.length > 2)
                     sp(prefs.textSize * 0.7f) else sp(prefs.textSize.toFloat())
                 val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2

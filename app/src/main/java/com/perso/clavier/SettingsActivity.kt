@@ -1,6 +1,7 @@
 package com.perso.clavier
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -8,7 +9,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -18,11 +22,19 @@ import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import java.io.File
 
 class SettingsActivity : Activity() {
 
+    companion object {
+        const val PICK_IMAGE = 42
+    }
+
     private lateinit var prefs: Prefs
     private lateinit var themesContainer: LinearLayout
+    private lateinit var colorsContainer: LinearLayout
+    private lateinit var preview: KeyboardView
+    private lateinit var testField: EditText
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -31,6 +43,21 @@ class SettingsActivity : Activity() {
             setColor(color)
             cornerRadius = dp(radius).toFloat()
         }
+
+    private val previewListener = object : KeyboardView.Listener {
+        override fun onText(text: String) {
+            testField.append(text)
+        }
+
+        override fun onDelete() {
+            val t = testField.text
+            if (t.isNotEmpty()) t.delete(t.length - 1, t.length)
+        }
+
+        override fun onEnter() {
+            testField.append("\n")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,7 +76,7 @@ class SettingsActivity : Activity() {
             setTextColor(Color.parseColor("#202124"))
         })
         root.addView(TextView(this).apply {
-            text = "1. Active le clavier  •  2. Choisis-le par défaut  •  3. Personnalise-le !"
+            text = "Personnalise ton clavier et regarde l'aperçu changer en direct ✨"
             textSize = 14f
             setTextColor(Color.parseColor("#5F6368"))
             setPadding(0, dp(6), 0, dp(16))
@@ -63,34 +90,114 @@ class SettingsActivity : Activity() {
             imm.showInputMethodPicker()
         })
 
-        root.addView(section("Zone de test"))
-        root.addView(EditText(this).apply {
-            hint = "Tape ici pour tester le clavier…"
+        // ----- Aperçu en direct -----
+        root.addView(section("Aperçu en direct"))
+        testField = EditText(this).apply {
+            hint = "Tape sur l'aperçu ci-dessous, le texte s'écrit ici…"
             background = rounded(Color.WHITE)
             setPadding(dp(16), dp(16), dp(16), dp(16))
-        })
-
-        root.addView(section("Thèmes (${Themes.list.size})"))
-        themesContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
         }
+        root.addView(testField)
+
+        preview = KeyboardView(this, previewListener)
+        val previewCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(Color.parseColor("#DADCE0"), 18)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            lp.topMargin = dp(10)
+            layoutParams = lp
+            addView(preview)
+        }
+        root.addView(previewCard)
+
+        // ----- Thèmes prédéfinis -----
+        root.addView(section("Thèmes prédéfinis (${Themes.list.size})"))
+        root.addView(hint("Un thème remplit les couleurs, que tu peux ensuite modifier une par une plus bas."))
+        themesContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(themesContainer)
         buildThemes()
 
+        // ----- Couleurs personnalisées -----
+        root.addView(section("Couleurs personnalisées"))
+        colorsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(colorsContainer)
+        buildColorRows()
+
+        // ----- Image d'arrière-plan -----
+        root.addView(section("Image d'arrière-plan"))
+        root.addView(button("🖼️ Choisir une image") {
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
+            startActivityForResult(Intent.createChooser(intent, "Choisir une image"), PICK_IMAGE)
+        })
+        root.addView(button("Retirer l'image") {
+            prefs.bgImageEnabled = false
+            File(filesDir, KeyboardView.BG_FILE).delete()
+            preview.refresh()
+            Toast.makeText(this, "Image retirée", Toast.LENGTH_SHORT).show()
+        })
+        root.addView(hint("Assombrir l'image (pour la lisibilité)"))
+        root.addView(seek(0, 90, prefs.bgDim) {
+            prefs.bgDim = it
+            preview.refresh()
+        })
+        root.addView(hint("Opacité des touches (baisse-la pour voir l'image à travers)"))
+        root.addView(seek(15, 100, prefs.keyOpacity) {
+            prefs.keyOpacity = it
+            preview.refresh()
+        })
+
+        // ----- Options -----
         root.addView(section("Options"))
-        root.addView(switchRow("Vibration des touches", prefs.vibration) { prefs.vibration = it })
-        root.addView(switchRow("Son des touches", prefs.sound) { prefs.sound = it })
+        root.addView(switchRow("Vibration des touches", prefs.vibration) {
+            prefs.vibration = it
+            preview.refresh()
+        })
+        root.addView(switchRow("Son des touches", prefs.sound) {
+            prefs.sound = it
+            preview.refresh()
+        })
 
         root.addView(section("Hauteur des touches"))
-        root.addView(seek(40, 68, prefs.keyHeight) { prefs.keyHeight = it })
+        root.addView(seek(40, 68, prefs.keyHeight) {
+            prefs.keyHeight = it
+            preview.refresh()
+        })
 
         root.addView(section("Taille du texte"))
-        root.addView(seek(14, 26, prefs.textSize) { prefs.textSize = it })
+        root.addView(seek(14, 26, prefs.textSize) {
+            prefs.textSize = it
+            preview.refresh()
+        })
 
         val scroll = ScrollView(this)
         scroll.addView(root)
         setContentView(scroll)
     }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_IMAGE && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    File(filesDir, KeyboardView.BG_FILE).outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                prefs.bgImageEnabled = true
+                preview.refresh()
+                Toast.makeText(this, "Image appliquée 🖼️", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Impossible de charger l'image", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // ---------- Construction de l'interface ----------
 
     private fun section(text: String): TextView = TextView(this).apply {
         this.text = text
@@ -98,6 +205,13 @@ class SettingsActivity : Activity() {
         setTypeface(typeface, Typeface.BOLD)
         setTextColor(Color.parseColor("#202124"))
         setPadding(0, dp(24), 0, dp(10))
+    }
+
+    private fun hint(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        setTextColor(Color.parseColor("#5F6368"))
+        setPadding(dp(4), dp(4), dp(4), dp(2))
     }
 
     private fun button(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
@@ -158,8 +272,7 @@ class SettingsActivity : Activity() {
 
     private fun buildThemes() {
         themesContainer.removeAllViews()
-        val selected = prefs.themeIndex
-        Themes.list.forEachIndexed { index, theme ->
+        Themes.list.forEachIndexed { _, theme ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -173,10 +286,8 @@ class SettingsActivity : Activity() {
                 layoutParams = lp
             }
 
-            // Petites touches de prévisualisation
-            val colors = listOf(theme.key, theme.key, theme.accent, theme.special)
-            colors.forEach { c ->
-                row.addView(android.view.View(this).apply {
+            listOf(theme.key, theme.key, theme.accent, theme.special).forEach { c ->
+                row.addView(View(this).apply {
                     background = rounded(c, 6)
                     val lp = LinearLayout.LayoutParams(dp(26), dp(26))
                     lp.rightMargin = dp(6)
@@ -193,22 +304,152 @@ class SettingsActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
 
-            if (index == selected) {
-                row.addView(TextView(this).apply {
-                    text = "✓"
-                    textSize = 18f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(theme.accent)
-                })
-            }
-
             row.setOnClickListener {
-                prefs.themeIndex = index
-                buildThemes()
+                prefs.applyTheme(theme)
+                buildColorRows()
+                preview.refresh()
                 Toast.makeText(this, "Thème « ${theme.name} » appliqué", Toast.LENGTH_SHORT).show()
             }
 
             themesContainer.addView(row)
         }
+    }
+
+    private fun buildColorRows() {
+        colorsContainer.removeAllViews()
+        colorsContainer.addView(colorRow("Fond du clavier", { prefs.colorBg }) { prefs.colorBg = it })
+        colorsContainer.addView(colorRow("Touches", { prefs.colorKey }) { prefs.colorKey = it })
+        colorsContainer.addView(colorRow("Touches spéciales", { prefs.colorSpecial }) { prefs.colorSpecial = it })
+        colorsContainer.addView(colorRow("Accent (Entrée, Maj)", { prefs.colorAccent }) { prefs.colorAccent = it })
+        colorsContainer.addView(colorRow("Texte des touches", { prefs.colorText }) { prefs.colorText = it })
+        colorsContainer.addView(colorRow("Texte sur accent", { prefs.colorTextOnAccent }) { prefs.colorTextOnAccent = it })
+    }
+
+    private fun colorRow(label: String, get: () -> Int, set: (Int) -> Unit): LinearLayout {
+        val swatch = View(this).apply {
+            background = rounded(get(), 8)
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(30))
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(Color.WHITE)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            lp.topMargin = dp(8)
+            layoutParams = lp
+
+            addView(TextView(this@SettingsActivity).apply {
+                text = label
+                textSize = 15f
+                setTextColor(Color.parseColor("#202124"))
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(swatch)
+
+            setOnClickListener {
+                colorPicker(label, get()) { picked ->
+                    set(picked)
+                    swatch.background = rounded(picked, 8)
+                    preview.refresh()
+                }
+            }
+        }
+    }
+
+    private fun colorPicker(title: String, current: Int, onPicked: (Int) -> Unit) {
+        var r = Color.red(current)
+        var g = Color.green(current)
+        var b = Color.blue(current)
+        var updating = false
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        }
+
+        val previewView = View(this).apply {
+            background = rounded(current, 10)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
+            )
+        }
+        layout.addView(previewView)
+
+        val hex = EditText(this).apply {
+            setText(String.format("#%02X%02X%02X", r, g, b))
+        }
+
+        lateinit var barR: SeekBar
+        lateinit var barG: SeekBar
+        lateinit var barB: SeekBar
+
+        fun refreshPreview(fromHex: Boolean) {
+            previewView.background = rounded(Color.rgb(r, g, b), 10)
+            if (!fromHex) {
+                updating = true
+                hex.setText(String.format("#%02X%02X%02X", r, g, b))
+                updating = false
+            }
+        }
+
+        fun makeBar(label: String, init: Int, onCh: (Int) -> Unit): SeekBar {
+            layout.addView(TextView(this).apply {
+                text = label
+                textSize = 13f
+                setPadding(0, dp(10), 0, 0)
+            })
+            val bar = SeekBar(this).apply {
+                max = 255
+                progress = init
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                        if (fromUser) {
+                            onCh(p)
+                            refreshPreview(false)
+                        }
+                    }
+                    override fun onStartTrackingTouch(sb: SeekBar?) {}
+                    override fun onStopTrackingTouch(sb: SeekBar?) {}
+                })
+            }
+            layout.addView(bar)
+            return bar
+        }
+
+        barR = makeBar("Rouge", r) { r = it }
+        barG = makeBar("Vert", g) { g = it }
+        barB = makeBar("Bleu", b) { b = it }
+
+        layout.addView(TextView(this).apply {
+            text = "Code hexadécimal"
+            textSize = 13f
+            setPadding(0, dp(10), 0, 0)
+        })
+        hex.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (updating) return
+                try {
+                    val c = Color.parseColor(s.toString().trim())
+                    r = Color.red(c); g = Color.green(c); b = Color.blue(c)
+                    barR.progress = r; barG.progress = g; barB.progress = b
+                    refreshPreview(true)
+                } catch (_: Exception) {
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, bb: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, bb: Int, c: Int) {}
+        })
+        layout.addView(hex)
+
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(layout)
+            .setPositiveButton("OK") { _, _ -> onPicked(Color.rgb(r, g, b)) }
+            .setNegativeButton("Annuler", null)
+            .show()
     }
 }
