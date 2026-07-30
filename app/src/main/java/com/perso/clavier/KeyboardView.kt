@@ -15,6 +15,7 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import java.io.File
+import kotlin.math.abs
 
 class KeyboardView(context: Context, private val listener: Listener) : View(context) {
 
@@ -28,6 +29,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onLangSwitch()
         fun onGifToggle()
         fun onTranslateToggle()
+        fun onMoveCursor(delta: Int)
+        fun onClipboardPanel()
+        fun onRewrite()
         fun onSuggestion(word: String)
     }
 
@@ -76,6 +80,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val handler = Handler(Looper.getMainLooper())
 
     private var pressedKey: Key? = null
+    private var downX = 0f
+    private var spaceCursor = false
+    private var cursorAnchor = 0f
     private var flashKey: Key? = null
     private var flashUntil = 0L
     private var longPressConsumed = false
@@ -325,6 +332,20 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
+    private val clipPanelRunnable = Runnable {
+        longPressConsumed = true
+        pressedKey = null
+        invalidate()
+        listener.onClipboardPanel()
+    }
+
+    private val rewriteRunnable = Runnable {
+        longPressConsumed = true
+        pressedKey = null
+        invalidate()
+        listener.onRewrite()
+    }
+
     private val accentRunnable = Runnable {
         val key = pressedKey ?: return@Runnable
         val acc = Layouts.accents(prefs.langIndex.coerceIn(0, 2))[key.label] ?: return@Runnable
@@ -340,16 +361,40 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             MotionEvent.ACTION_DOWN -> {
                 val key = keyAt(event.x, event.y) ?: return true
                 pressedKey = key
+                downX = event.x
+                spaceCursor = false
                 longPressConsumed = false
                 feedback()
-                if (key.code == CODE_DEL) {
-                    handler.postDelayed(repeatDelete, 400)
-                } else if (key.code >= 0 && !symbols &&
-                    Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label)
-                ) {
-                    handler.postDelayed(accentRunnable, 380)
+                when {
+                    key.code == CODE_DEL -> handler.postDelayed(repeatDelete, 400)
+                    key.code == CODE_PASTE -> handler.postDelayed(clipPanelRunnable, 450)
+                    key.code == CODE_ENTER -> handler.postDelayed(rewriteRunnable, 500)
+                    key.code >= 0 && !symbols &&
+                            Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label) ->
+                        handler.postDelayed(accentRunnable, 380)
                 }
                 invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (pressedKey?.code == CODE_SPACE) {
+                    val dx = event.x - downX
+                    if (!spaceCursor && abs(dx) > dp(16f)) {
+                        spaceCursor = true
+                        handler.removeCallbacksAndMessages(null)
+                        cursorAnchor = event.x
+                    }
+                    if (spaceCursor) {
+                        val step = dp(11f)
+                        while (event.x - cursorAnchor > step) {
+                            listener.onMoveCursor(1)
+                            cursorAnchor += step
+                        }
+                        while (event.x - cursorAnchor < -step) {
+                            listener.onMoveCursor(-1)
+                            cursorAnchor -= step
+                        }
+                    }
+                }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacksAndMessages(null)
@@ -360,11 +405,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     flashUntil = System.currentTimeMillis() + 160
                 }
                 invalidate()
-                if (key != null && !longPressConsumed &&
+                if (key != null && !longPressConsumed && !spaceCursor &&
                     event.actionMasked == MotionEvent.ACTION_UP
                 ) {
                     handleKey(key)
                 }
+                spaceCursor = false
             }
         }
         return true

@@ -8,6 +8,7 @@ import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.KeyEvent
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
 import android.widget.FrameLayout
@@ -26,6 +27,37 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     private var translateTarget: Pair<String, String>? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { captureClip() }
+
+    override fun onCreate() {
+        super.onCreate()
+        try {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .addPrimaryClipChangedListener(clipListener)
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onDestroy() {
+        try {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .removePrimaryClipChangedListener(clipListener)
+        } catch (_: Exception) {
+        }
+        super.onDestroy()
+    }
+
+    private fun captureClip() {
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = cm.primaryClip ?: return
+            if (clip.itemCount == 0) return
+            val text = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
+            Prefs(this).addClip(text)
+        } catch (_: Exception) {
+        }
+    }
+
     override fun onCreateInputView(): View {
         val frame = FrameLayout(this)
         val kb = KeyboardView(this, this)
@@ -38,6 +70,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         hidePanel()
+        captureClip()
         keyboardView?.refresh()
         keyboardView?.translateMode = translateTarget?.second
         keyboardView?.autoShift()
@@ -155,6 +188,87 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    override fun onMoveCursor(delta: Int) {
+        sendDownUpKeyEvents(
+            if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        )
+    }
+
+    override fun onClipboardPanel() {
+        if (panel is ClipboardPanel) {
+            hidePanel()
+            return
+        }
+        showPanel(
+            ClipboardPanel(
+                this, Prefs(this), panelHeight(),
+                onPaste = { text ->
+                    currentInputConnection?.commitText(text, 1)
+                    hidePanel()
+                    updateSuggestions()
+                },
+                onBack = { hidePanel() }
+            )
+        )
+    }
+
+    override fun onRewrite() {
+        if (panel is RewritePanel) {
+            hidePanel()
+            return
+        }
+        val before = currentInputConnection?.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+        val after = currentInputConnection?.getTextAfterCursor(4000, 0)?.toString() ?: ""
+        if ((before + after).isBlank()) {
+            Toast.makeText(this, "Écris d'abord ton message, puis appui long sur ⏎", Toast.LENGTH_SHORT).show()
+            return
+        }
+        showPanel(
+            RewritePanel(
+                this, Prefs(this), panelHeight(),
+                onPick = { instruction ->
+                    hidePanel()
+                    doRewrite(instruction)
+                },
+                onBack = { hidePanel() }
+            )
+        )
+    }
+
+    private fun doRewrite(instruction: String) {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
+        val full = before + after
+        if (full.isBlank()) return
+        Toast.makeText(this, "✨ Reformulation…", Toast.LENGTH_SHORT).show()
+        thread {
+            val result = Rewriter.rewrite(full, instruction)
+            mainHandler.post {
+                if (result == null) {
+                    Toast.makeText(this, "Reformulation impossible (connexion ?)", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+                val c = currentInputConnection ?: return@post
+                c.beginBatchEdit()
+                c.deleteSurroundingText(before.length, after.length)
+                c.commitText(result, 1)
+                c.endBatchEdit()
+                updateSuggestions()
+            }
+        }
+    }
+
+    private fun expandShortcut(ic: InputConnection, trailing: String): Boolean {
+        val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
+        val token = before.takeLastWhile { !it.isWhitespace() }
+        if (token.isEmpty()) return false
+        val expansion = Prefs(this).shortcuts()[token] ?: return false
+        ic.deleteSurroundingText(token.length, 0)
+        ic.commitText(expansion + trailing, 1)
+        return true
+    }
+
     private fun commitGif(file: File) {
         if (Build.VERSION.SDK_INT < 25) {
             Toast.makeText(this, "GIF non pris en charge sur cette version d'Android", Toast.LENGTH_SHORT).show()
@@ -211,7 +325,25 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onText(text: String) {
         val ic = currentInputConnection ?: return
+
+        // Calculatrice : "12*45" puis "=" insere "=540"
+        if (text == "=") {
+            val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
+            val expr = before.takeLastWhile { it in "0123456789+-*/×÷.,() " }.trim()
+            val result = Calculator.eval(expr)
+            if (result != null) {
+                ic.commitText("=$result", 1)
+                updateSuggestions()
+                return
+            }
+        }
+
         if (text.length == 1 && !text[0].isLetter()) {
+            // Raccourcis texte : "slt" + espace -> texte complet
+            if (expandShortcut(ic, text)) {
+                updateSuggestions()
+                return
+            }
             learn(currentPrefix())
         }
         ic.commitText(text, 1)
@@ -234,6 +366,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             doTranslate()
             return
         }
+        currentInputConnection?.let { expandShortcut(it, "") }
         learn(currentPrefix())
         val handled = sendDefaultEditorAction(true)
         if (!handled) {

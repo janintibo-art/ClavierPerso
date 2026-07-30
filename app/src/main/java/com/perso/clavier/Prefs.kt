@@ -2,6 +2,8 @@ package com.perso.clavier
 
 import android.content.Context
 import android.graphics.Color
+import org.json.JSONArray
+import org.json.JSONObject
 
 class Prefs(context: Context) {
 
@@ -54,6 +56,75 @@ class Prefs(context: Context) {
     var bgDim: Int
         get() = sp.getInt("bg_dim", 30)
         set(v) { sp.edit().putInt("bg_dim", v).apply() }
+
+    // ----- Raccourcis texte -----
+
+    fun shortcuts(): Map<String, String> {
+        return try {
+            val obj = JSONObject(sp.getString("shortcuts", "{}") ?: "{}")
+            val map = LinkedHashMap<String, String>()
+            for (k in obj.keys()) map[k] = obj.getString(k)
+            map
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun putShortcut(key: String, value: String) {
+        val obj = JSONObject(sp.getString("shortcuts", "{}") ?: "{}")
+        obj.put(key, value)
+        sp.edit().putString("shortcuts", obj.toString()).apply()
+    }
+
+    fun removeShortcut(key: String) {
+        val obj = JSONObject(sp.getString("shortcuts", "{}") ?: "{}")
+        obj.remove(key)
+        sp.edit().putString("shortcuts", obj.toString()).apply()
+    }
+
+    // ----- Historique du presse-papiers -----
+
+    fun clips(): List<Pair<String, Boolean>> {
+        return try {
+            val arr = JSONArray(sp.getString("clips", "[]") ?: "[]")
+            val out = ArrayList<Pair<String, Boolean>>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(o.getString("t") to o.optBoolean("p", false))
+            }
+            out
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveClips(list: List<Pair<String, Boolean>>) {
+        val arr = JSONArray()
+        list.forEach { (t, pin) ->
+            arr.put(JSONObject().put("t", t).put("p", pin))
+        }
+        sp.edit().putString("clips", arr.toString()).apply()
+    }
+
+    fun addClip(text: String) {
+        if (text.isBlank() || text.length > 5000) return
+        val list = clips().toMutableList()
+        val existing = list.firstOrNull { it.first == text }
+        val pinned = existing?.second ?: false
+        list.removeAll { it.first == text }
+        list.add(0, text to pinned)
+        val pins = list.filter { it.second }
+        val others = list.filter { !it.second }.take(20)
+        saveClips(pins + others)
+    }
+
+    fun togglePinClip(text: String) {
+        saveClips(clips().map { if (it.first == text) it.first to !it.second else it })
+    }
+
+    fun clearUnpinnedClips() {
+        saveClips(clips().filter { it.second })
+    }
 
     var tenorKey: String
         get() = sp.getString("tenor_key", "") ?: ""

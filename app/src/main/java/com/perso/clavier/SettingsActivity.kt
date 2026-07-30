@@ -33,6 +33,7 @@ class SettingsActivity : Activity() {
     private lateinit var prefs: Prefs
     private lateinit var themesContainer: LinearLayout
     private lateinit var colorsContainer: LinearLayout
+    private lateinit var shortcutsContainer: LinearLayout
     private lateinit var preview: KeyboardView
     private lateinit var testField: EditText
 
@@ -78,6 +79,19 @@ class SettingsActivity : Activity() {
 
         override fun onTranslateToggle() {
             Toast.makeText(this@SettingsActivity, "Le mode traduction s'active dans le vrai clavier", Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onMoveCursor(delta: Int) {
+            val pos = (testField.selectionStart + delta).coerceIn(0, testField.length())
+            testField.setSelection(pos)
+        }
+
+        override fun onClipboardPanel() {
+            Toast.makeText(this@SettingsActivity, "L'historique s'ouvre dans le vrai clavier (appui long sur 📋)", Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onRewrite() {
+            Toast.makeText(this@SettingsActivity, "La reformulation IA s'ouvre dans le vrai clavier (appui long sur ⏎)", Toast.LENGTH_SHORT).show()
         }
 
         override fun onLangSwitch() {
@@ -232,6 +246,16 @@ class SettingsActivity : Activity() {
             prefs.sound = it
             preview.refresh()
         })
+
+        root.addView(section("Raccourcis texte"))
+        root.addView(hint("Tape le raccourci puis espace : il est remplace par le texte complet. Exemple : slt -> Salut, ca va ?"))
+        shortcutsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(shortcutsContainer)
+        buildShortcuts()
+        root.addView(button("+ Ajouter un raccourci") { addShortcutDialog() })
+
+        root.addView(section("Astuces du clavier"))
+        root.addView(hint("- Glisse ton doigt sur la barre Espace pour deplacer le curseur\n- Appui long sur 📋 : historique du presse-papiers (epingle tes favoris avec 📌)\n- Appui long sur ⏎ : reformulation IA du message (poli, pro, drole...)\n- Tape un calcul puis = : le resultat s'ecrit tout seul (ex : 12*45=540)"))
 
         root.addView(section("GIF"))
         root.addView(hint("La touche GIF du clavier utilise Tenor. Si la recherche ne fonctionne pas, colle ici une cle API Tenor gratuite (console.cloud.google.com, API Tenor)."))
@@ -447,6 +471,80 @@ class SettingsActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun buildShortcuts() {
+        shortcutsContainer.removeAllViews()
+        val map = prefs.shortcuts()
+        if (map.isEmpty()) {
+            shortcutsContainer.addView(hint("Aucun raccourci pour l'instant."))
+            return
+        }
+        map.forEach { (key, value) ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = rounded(Color.WHITE)
+                setPadding(dp(14), dp(10), dp(8), dp(10))
+                val lp = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                lp.topMargin = dp(6)
+                layoutParams = lp
+            }
+            row.addView(TextView(this).apply {
+                text = key
+                textSize = 15f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.parseColor("#4A6CF7"))
+            })
+            row.addView(TextView(this).apply {
+                text = "  ->  " + value
+                textSize = 14f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(Color.parseColor("#202124"))
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(TextView(this).apply {
+                text = "✕"
+                textSize = 16f
+                setTextColor(Color.parseColor("#B00020"))
+                setPadding(dp(12), dp(4), dp(8), dp(4))
+                setOnClickListener {
+                    prefs.removeShortcut(key)
+                    buildShortcuts()
+                }
+            })
+            shortcutsContainer.addView(row)
+        }
+    }
+
+    private fun addShortcutDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+        }
+        val keyField = EditText(this).apply { hint = "Raccourci (ex : slt)" }
+        val valueField = EditText(this).apply { hint = "Texte complet (ex : Salut, ca va ?)" }
+        layout.addView(keyField)
+        layout.addView(valueField)
+        AlertDialog.Builder(this)
+            .setTitle("Nouveau raccourci")
+            .setView(layout)
+            .setPositiveButton("Ajouter") { _, _ ->
+                val k = keyField.text.toString().trim()
+                val v = valueField.text.toString().trim()
+                if (k.isNotEmpty() && v.isNotEmpty() && !k.contains(" ")) {
+                    prefs.putShortcut(k, v)
+                    buildShortcuts()
+                } else {
+                    Toast.makeText(this, "Le raccourci ne doit pas contenir d'espace", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
     }
 
     private fun colorPicker(title: String, current: Int, onPicked: (Int) -> Unit) {
