@@ -93,7 +93,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var animating = false
     private val pressTimes = HashMap<String, Long>()
 
+    /** Effet visuel en cours sur une touche. */
+    private class Ripple(val rect: RectF, val start: Long, val label: String)
+
+    private val ripples = ArrayList<Ripple>()
+    private val effectPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
     private var pressedKey: Key? = null
+    private var instantDone = false
     private var downX = 0f
     private var spaceCursor = false
     private var cursorAnchor = 0f
@@ -458,6 +465,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             rowIndex++
         }
 
+        drawRipples(canvas)
+
         // Bulle d'apercu au-dessus de la touche pressee
         val pk = pressedKey
         if (pk != null && pk.code >= 0 && prefs.keyPopup) {
@@ -492,8 +501,133 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
-    private fun keyAt(x: Float, y: Float): Key? =
-        keyRects.firstOrNull { it.second.contains(x, y) }?.first
+    private fun keyAt(x: Float, y: Float): Key? {
+        keyRects.firstOrNull { it.second.contains(x, y) }?.let { return it.first }
+        // Tolerance : rattraper les appuis qui tombent entre deux touches
+        val margin = dp(prefs.touchMargin.toFloat())
+        if (margin <= 0f) return null
+        var best: Key? = null
+        var bestDist = Float.MAX_VALUE
+        for ((key, r) in keyRects) {
+            val dx = when {
+                x < r.left -> r.left - x
+                x > r.right -> x - r.right
+                else -> 0f
+            }
+            val dy = when {
+                y < r.top -> r.top - y
+                y > r.bottom -> y - r.bottom
+                else -> 0f
+            }
+            if (dx > margin || dy > margin) continue
+            val d = dx * dx + dy * dy
+            if (d < bestDist) {
+                bestDist = d
+                best = key
+            }
+        }
+        return best
+    }
+
+    /** Touches qui peuvent partir des le contact (pas celles a appui long ou a glissement). */
+    private fun isInstantKey(key: Key): Boolean = when (key.code) {
+        CODE_DEL, CODE_SPACE, CODE_ENTER, CODE_PASTE, CODE_EMOJI, CODE_GIF,
+        CODE_SETTINGS, CODE_TRANSLATE, CODE_LANG, CODE_SHIFT, CODE_SYM -> false
+        else -> key.code >= 0 &&
+                !(!symbols && Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label))
+    }
+
+    private fun rectOf(key: Key): RectF? = keyRects.firstOrNull { it.first === key }?.second
+
+    private fun addRipple(key: Key) {
+        if (prefs.pressEffect == 0) return
+        val r = rectOf(key) ?: return
+        if (ripples.size > 12) ripples.removeAt(0)
+        ripples.add(Ripple(RectF(r), System.currentTimeMillis(), key.label))
+        invalidate()
+    }
+
+    private fun effectColor(): Int {
+        val c = prefs.pressEffectColor
+        return if (c == 0) prefs.colorAccent else c
+    }
+
+    /** Dessine les effets de frappe par-dessus les touches. */
+    private fun drawRipples(canvas: Canvas) {
+        if (ripples.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val duration = prefs.pressEffectDuration.coerceIn(80, 900).toLong()
+        val mode = prefs.pressEffect
+        val color = effectColor()
+        val it = ripples.iterator()
+        var alive = false
+        while (it.hasNext()) {
+            val rp = it.next()
+            val age = now - rp.start
+            if (age > duration) {
+                it.remove()
+                continue
+            }
+            alive = true
+            val t = age.toFloat() / duration
+            val fade = 1f - t
+            when (mode) {
+                1 -> { // Couleur : la touche se teinte puis revient
+                    effectPaint.style = Paint.Style.FILL
+                    effectPaint.color = Color.argb((190 * fade).toInt(), Color.red(color), Color.green(color), Color.blue(color))
+                    canvas.drawRoundRect(rp.rect, dp(9f), dp(9f), effectPaint)
+                }
+                2 -> { // Onde qui s'etend depuis le centre
+                    effectPaint.style = Paint.Style.FILL
+                    effectPaint.color = Color.argb((140 * fade).toInt(), Color.red(color), Color.green(color), Color.blue(color))
+                    canvas.save()
+                    canvas.clipRect(rp.rect)
+                    val maxR = maxOf(rp.rect.width(), rp.rect.height()) * 0.9f
+                    canvas.drawCircle(rp.rect.centerX(), rp.rect.centerY(), maxR * t, effectPaint)
+                    canvas.restore()
+                }
+                3 -> { // Zoom : cadre qui grandit et s'efface
+                    effectPaint.style = Paint.Style.STROKE
+                    effectPaint.strokeWidth = dp(2.5f) * fade
+                    effectPaint.color = Color.argb((230 * fade).toInt(), Color.red(color), Color.green(color), Color.blue(color))
+                    val g = dp(10f) * t
+                    canvas.drawRoundRect(
+                        RectF(rp.rect.left - g, rp.rect.top - g, rp.rect.right + g, rp.rect.bottom + g),
+                        dp(11f), dp(11f), effectPaint
+                    )
+                }
+                4 -> { // Eclat : halo lumineux
+                    effectPaint.style = Paint.Style.FILL
+                    val glow = (110 * fade).toInt()
+                    for (i in 3 downTo 1) {
+                        val g = dp(4f) * i * (0.4f + t)
+                        effectPaint.color = Color.argb(glow / i, Color.red(color), Color.green(color), Color.blue(color))
+                        canvas.drawRoundRect(
+                            RectF(rp.rect.left - g, rp.rect.top - g, rp.rect.right + g, rp.rect.bottom + g),
+                            dp(12f), dp(12f), effectPaint
+                        )
+                    }
+                }
+                else -> { // Etincelles qui jaillissent
+                    effectPaint.style = Paint.Style.FILL
+                    effectPaint.color = Color.argb((235 * fade).toInt(), Color.red(color), Color.green(color), Color.blue(color))
+                    val cx = rp.rect.centerX()
+                    val cy = rp.rect.centerY()
+                    val dist = dp(24f) * t
+                    for (i in 0 until 6) {
+                        val a = (i * 60 + rp.label.hashCode() % 30) * Math.PI / 180.0
+                        canvas.drawCircle(
+                            cx + (Math.cos(a) * dist).toFloat(),
+                            cy + (Math.sin(a) * dist).toFloat(),
+                            dp(2.6f) * fade, effectPaint
+                        )
+                    }
+                }
+            }
+        }
+        effectPaint.style = Paint.Style.FILL
+        if (alive) postInvalidateDelayed(16)
+    }
 
     private val repeatDelete = object : Runnable {
         override fun run() {
@@ -543,20 +677,33 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 spaceCursor = false
                 longPressConsumed = false
                 feedback()
+                addRipple(key)
+
+                // Delais adaptes a la sensibilite choisie
+                val f = prefs.sensitivity.coerceIn(30, 200) / 100f
                 when {
-                    key.code == CODE_DEL -> handler.postDelayed(repeatDelete, 400)
-                    key.code == CODE_PASTE -> handler.postDelayed(clipPanelRunnable, 450)
-                    key.code == CODE_ENTER -> handler.postDelayed(rewriteRunnable, 500)
+                    key.code == CODE_DEL -> handler.postDelayed(repeatDelete, (400 * f).toLong())
+                    key.code == CODE_PASTE -> handler.postDelayed(clipPanelRunnable, (450 * f).toLong())
+                    key.code == CODE_ENTER -> handler.postDelayed(rewriteRunnable, (500 * f).toLong())
                     key.code >= 0 && !symbols &&
                             Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label) ->
-                        handler.postDelayed(accentRunnable, 380)
+                        handler.postDelayed(accentRunnable, (380 * f).toLong())
+                }
+
+                // Frappe instantanee : la lettre part des le contact
+                if (prefs.instantKey && isInstantKey(key)) {
+                    handleKey(key)
+                    instantDone = true
+                } else {
+                    instantDone = false
                 }
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
                 if (pressedKey?.code == CODE_SPACE) {
                     val dx = event.x - downX
-                    if (!spaceCursor && abs(dx) > dp(16f)) {
+                    val threshold = dp(10f + prefs.sensitivity / 12f)
+                    if (!spaceCursor && abs(dx) > threshold) {
                         spaceCursor = true
                         handler.removeCallbacksAndMessages(null)
                         cursorAnchor = event.x
@@ -591,11 +738,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     flashUntil = System.currentTimeMillis() + 160
                 }
                 invalidate()
-                if (key != null && !longPressConsumed && !spaceCursor &&
+                if (key != null && !longPressConsumed && !spaceCursor && !instantDone &&
                     event.actionMasked == MotionEvent.ACTION_UP
                 ) {
                     handleKey(key)
                 }
+                instantDone = false
                 spaceCursor = false
             }
         }

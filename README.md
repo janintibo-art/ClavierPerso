@@ -3,7 +3,7 @@
 Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 
 ## Écriture
-- Suggestions de mots **avec correcteur d'orthographe** (dictionnaire de 4600 mots)
+- Suggestions de mots **avec correcteur d'orthographe** (dictionnaire de 11 000 mots)
 - **Clavier intelligent** : il compte les mots que tu écris et te les propose dès la 1re ou 2e lettre
 - **Prédiction du mot suivant** : après un mot, il propose ce que tu écris habituellement ensuite
 - Rangée de chiffres au-dessus des lettres (option)
@@ -21,6 +21,12 @@ Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 - ⏎ **appui long : reformulation IA** (plus poli, pro, drôle, court, romantique, correction)
 - ⚙️ Réglages
 - 🌐 Changement de langue (Français / English / Español)
+
+## Confort de frappe
+- **Frappe instantanée** : la lettre part dès le contact du doigt
+- **Sensibilité réglable** (délais d'appui long, seuil de glissement)
+- **Tolérance de zone** : rattrape les appuis entre deux touches
+- **Effets à la frappe** : Couleur, Onde, Zoom, Éclat, Étincelles (durée et couleur réglables)
 
 ## Personnalisation
 - 20 thèmes prédéfinis

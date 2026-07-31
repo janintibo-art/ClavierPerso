@@ -96,6 +96,40 @@ class Prefs(context: Context) {
         get() = sp.getInt("bg_saturation", 100)
         set(v) { sp.edit().putInt("bg_saturation", v).apply() }
 
+    // ----- Sensibilite -----
+
+    /** 0 = classique (au relachement), 1 = instantane (des le contact). */
+    var instantKey: Boolean
+        get() = sp.getBoolean("instant_key", true)
+        set(v) { sp.edit().putBoolean("instant_key", v).apply() }
+
+    /** 30 = tres reactif, 200 = plus tolerant. Pilote les delais d'appui long. */
+    var sensitivity: Int
+        get() = sp.getInt("sensitivity", 100)
+        set(v) { sp.edit().putInt("sensitivity", v).apply() }
+
+    /** Marge invisible autour des touches, en dp. */
+    var touchMargin: Int
+        get() = sp.getInt("touch_margin", 6)
+        set(v) { sp.edit().putInt("touch_margin", v).apply() }
+
+    // ----- Effet visuel a la frappe -----
+
+    /** 0 = aucun, 1 = couleur, 2 = onde, 3 = zoom, 4 = eclat, 5 = etincelles */
+    var pressEffect: Int
+        get() = sp.getInt("press_effect", 2)
+        set(v) { sp.edit().putInt("press_effect", v).apply() }
+
+    /** Duree de l'effet en millisecondes. */
+    var pressEffectDuration: Int
+        get() = sp.getInt("press_duration", 260)
+        set(v) { sp.edit().putInt("press_duration", v).apply() }
+
+    /** Couleur de l'effet ; 0 = utiliser la couleur d'accent. */
+    var pressEffectColor: Int
+        get() = sp.getInt("press_color", 0)
+        set(v) { sp.edit().putInt("press_color", v).apply() }
+
     // ----- Mode RGB -----
 
     /** 0 = desactive, 1 = vague arc-en-ciel, 2 = respiration, 3 = reactif a la frappe, 4 = cascade */

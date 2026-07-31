@@ -266,6 +266,62 @@ class SettingsActivity : Activity() {
             preview.refresh()
         })
 
+        // ----- Sensibilite -----
+        root.addView(section("Sensibilité du clavier ⚡"))
+        root.addView(switchRow("Frappe instantanée (dès le contact du doigt)", prefs.instantKey) {
+            prefs.instantKey = it
+            preview.refresh()
+        })
+        root.addView(hint("Réactivité : à gauche = très rapide (appuis longs plus courts), à droite = plus tolérant"))
+        root.addView(seek(30, 200, prefs.sensitivity) {
+            prefs.sensitivity = it
+            preview.refresh()
+        })
+        root.addView(hint("Tolérance de zone : rattrape les appuis qui tombent entre deux touches"))
+        root.addView(seek(0, 16, prefs.touchMargin) {
+            prefs.touchMargin = it
+            preview.refresh()
+        })
+
+        // ----- Effet de frappe -----
+        root.addView(section("Effet à la frappe ✨"))
+        root.addView(hint("Teste directement sur l'aperçu ci-dessus !"))
+        val effects = listOf("Aucun", "Couleur", "Onde", "Zoom", "Éclat", "Étincelles")
+        val effectRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        effects.forEachIndexed { index, name ->
+            effectRow.addView(TextView(this).apply {
+                text = name
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                background = rounded(Color.parseColor(if (index == prefs.pressEffect) "#4A6CF7" else "#9AA0A6"), 10)
+                setPadding(dp(2), dp(10), dp(2), dp(10))
+                val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                if (index > 0) lp.leftMargin = dp(4)
+                layoutParams = lp
+                setOnClickListener {
+                    prefs.pressEffect = index
+                    preview.refresh()
+                    for (i in 0 until effectRow.childCount) {
+                        (effectRow.getChildAt(i) as TextView).background =
+                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"), 10)
+                    }
+                }
+            })
+        }
+        root.addView(effectRow)
+        root.addView(hint("Durée de l'effet"))
+        root.addView(seek(80, 900, prefs.pressEffectDuration) {
+            prefs.pressEffectDuration = it
+            preview.refresh()
+        })
+        val effectColorRow = colorRow(
+            "Couleur de l'effet",
+            { if (prefs.pressEffectColor == 0) prefs.colorAccent else prefs.pressEffectColor }
+        ) { prefs.pressEffectColor = it }
+        root.addView(effectColorRow)
+
         // ----- Luminosite -----
         root.addView(section("Luminosité des touches"))
         root.addView(hint("Assombris ou illumine toutes les touches d'un coup."))
