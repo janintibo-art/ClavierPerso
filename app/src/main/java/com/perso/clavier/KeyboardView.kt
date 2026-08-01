@@ -80,6 +80,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             invalidate()
         }
 
+    /** Index de la suggestion mise en avant (celle appliquee par la correction auto). */
+    var highlightIndex: Int = -1
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
@@ -400,7 +407,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 for (i in 0 until 3) {
                     val r = RectF(sugW * i, toolsH, sugW * (i + 1), toolsH + sugH)
                     if (i < suggestions.size) {
-                        topItem(Key(suggestions[i], CODE_SUG - i), r, sp(15f))
+                        val label = if (i == 0 && highlightIndex == 1)
+                            "\u201C" + suggestions[i] + "\u201D" else suggestions[i]
+                        topItem(
+                            Key(label, CODE_SUG - i), r, sp(15f),
+                            active = i == highlightIndex
+                        )
                     }
                     if (i > 0 && suggestions.size > i) {
                         canvas.drawLine(r.left, toolsH + dp(9f), r.left, toolsH + sugH - dp(9f), linePaint)

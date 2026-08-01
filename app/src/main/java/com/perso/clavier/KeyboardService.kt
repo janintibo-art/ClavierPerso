@@ -27,6 +27,30 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     private var translateTarget: Pair<String, String>? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * Etat local de la saisie : evite de relire le champ de texte a chaque touche
+     * (chaque lecture est un appel inter-processus, c'est ce qui rendait la frappe molle).
+     */
+    private val composing = StringBuilder()
+    private var lastWord = ""
+    private var expectedCursor = -1
+    private var lastAutoCorrect: Pair<String, String>? = null
+    private var lastSpaceTime = 0L
+    private var prefsCache: Prefs? = null
+
+    private fun prefs(): Prefs = prefsCache ?: Prefs(this).also { prefsCache = it }
+
+    /** Resynchronise le buffer avec le vrai contenu du champ. */
+    private fun resync() {
+        val ic = currentInputConnection
+        val before = ic?.getTextBeforeCursor(96, 0)?.toString() ?: ""
+        composing.setLength(0)
+        composing.append(before.takeLastWhile { it.isLetter() || it == '\'' })
+        val rest = before.dropLast(composing.length).trimEnd()
+        lastWord = rest.takeLastWhile { it.isLetter() || it == '\'' }.lowercase()
+        lastAutoCorrect = null
+    }
+
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { captureClip() }
 
     override fun onCreate() {
@@ -67,8 +91,23 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         return frame
     }
 
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        // Le curseur a bouge autrement que par notre frappe : on se resynchronise
+        if (newSelStart != expectedCursor) {
+            resync()
+            updateSuggestions()
+        }
+        expectedCursor = newSelStart
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        prefsCache = null
+        resync()
         hidePanel()
         captureClip()
         keyboardView?.refresh()
@@ -296,49 +335,61 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     // ---------- Suggestions ----------
 
-    private fun currentPrefix(): String {
-        val before = currentInputConnection?.getTextBeforeCursor(64, 0)?.toString() ?: return ""
-        return before.takeLastWhile { it.isLetter() || it == '\'' || it == '-' }
-    }
+    private fun currentPrefix(): String = composing.toString()
 
-    /** Dernier mot complet avant celui en cours d'ecriture. */
-    private fun previousWord(): String {
-        val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString() ?: return ""
-        val trimmed = before.dropLastWhile { it.isLetter() || it == '\'' || it == '-' }
-        if (trimmed.length == before.length && before.isNotEmpty() && before.last().isLetter()) return ""
-        return trimmed.trimEnd().takeLastWhile { it.isLetter() || it == '\'' || it == '-' }.lowercase()
-    }
+    private fun previousWord(): String = lastWord
 
     private var suggestionSeq = 0
+    private var pendingCorrection: String? = null
+    private val suggestionRunnable = Runnable { computeSuggestions() }
 
+    /** Programme un calcul de suggestions (regroupe les frappes rapides). */
     private fun updateSuggestions() {
+        mainHandler.removeCallbacks(suggestionRunnable)
+        mainHandler.postDelayed(suggestionRunnable, 25)
+    }
+
+    private fun computeSuggestions() {
         val kb = keyboardView ?: return
-        if (!Prefs(this).suggestionsEnabled) {
+        if (!prefs().suggestionsEnabled) {
             kb.suggestions = emptyList()
+            pendingCorrection = null
             return
         }
         val prefix = currentPrefix()
         val prev = previousWord()
         if (prefix.isEmpty() && prev.isEmpty()) {
             kb.suggestions = emptyList()
+            pendingCorrection = null
             return
         }
-        val lang = Prefs(this).langIndex
+        val lang = prefs().langIndex
         val seq = ++suggestionSeq
         thread {
-            var list = Dictionary.suggest(this, lang, prefix, 3, prev)
+            val res = try {
+                Dictionary.suggest(this, lang, prefix, 3, prev)
+            } catch (e: Exception) {
+                null
+            } ?: return@thread
+            var list = res.words
             if (prefix.isNotEmpty() && prefix.first().isUpperCase()) {
                 list = list.map { w -> w.replaceFirstChar { it.uppercase() } }
             }
+            // Le mot tape reste affiche a gauche pour pouvoir le garder d'un doigt
+            val display = if (prefix.length >= 2 && !res.typedIsKnown && list.isNotEmpty())
+                listOf(prefix) + list.take(2) else list
             mainHandler.post {
-                if (seq == suggestionSeq) keyboardView?.suggestions = list
+                if (seq != suggestionSeq) return@post
+                keyboardView?.suggestions = display
+                keyboardView?.highlightIndex = if (display.size > 1 && display[0] == prefix) 1 else -1
+                pendingCorrection = res.correction
             }
         }
     }
 
     private fun learn(word: String) {
-        if (word.length >= 2 && word.all { it.isLetter() || it == '\'' || it == '-' }) {
-            Prefs(this).learnWord(word.lowercase(), previousWord())
+        if (word.length >= 2 && word.all { it.isLetter() || it == '\'' }) {
+            prefs().learnWord(word.lowercase(), previousWord())
         }
     }
 
@@ -346,38 +397,121 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onText(text: String) {
         val ic = currentInputConnection ?: return
+        val p = prefs()
 
-        // Calculatrice : "12*45" puis "=" insere "=540"
+        // --- Calculatrice : "12*45" puis "=" ---
         if (text == "=") {
             val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
             val expr = before.takeLastWhile { it in "0123456789+-*/×÷.,() " }.trim()
             val result = Calculator.eval(expr)
             if (result != null) {
                 ic.commitText("=$result", 1)
+                composing.setLength(0)
                 updateSuggestions()
                 return
             }
         }
 
-        if (text.length == 1 && !text[0].isLetter()) {
-            // Raccourcis texte : "slt" + espace -> texte complet
-            if (expandShortcut(ic, text)) {
-                updateSuggestions()
-                return
-            }
-            learn(currentPrefix())
+        val isLetter = text.length == 1 && (text[0].isLetter() || text[0] == '\'')
+
+        if (isLetter) {
+            ic.commitText(text, 1)
+            composing.append(text)
+            lastAutoCorrect = null
+            updateSuggestions()
+            return
         }
-        ic.commitText(text, 1)
+
+        // --- Fin de mot ---
+        val word = composing.toString()
+
+        // Double espace = point (comme sur Samsung)
+        if (text == " " && word.isEmpty() && p.doubleSpacePeriod) {
+            val now = System.currentTimeMillis()
+            if (now - lastSpaceTime < 600) {
+                val before = ic.getTextBeforeCursor(2, 0)?.toString() ?: ""
+                if (before.endsWith(" ") && before.length == 2 && before[0].isLetterOrDigit()) {
+                    ic.deleteSurroundingText(1, 0)
+                    ic.commitText(". ", 1)
+                    lastSpaceTime = 0
+                    keyboardView?.autoShift()
+                    updateSuggestions()
+                    return
+                }
+            }
+            lastSpaceTime = now
+        }
+
+        // Raccourcis texte
+        if (word.isNotEmpty() && expandShortcut(ic, text)) {
+            composing.setLength(0)
+            lastWord = ""
+            updateSuggestions()
+            return
+        }
+
+        // Correction automatique du mot qui vient d'etre ecrit
+        var written = word
+        val correction = pendingCorrection
+        if (p.autoCorrect && word.length >= 3 && correction != null &&
+            !correction.equals(word, ignoreCase = true) && (text == " " || text in ".,!?;:")
+        ) {
+            val fixed = if (word.first().isUpperCase())
+                correction.replaceFirstChar { it.uppercase() } else correction
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(word.length, 0)
+            ic.commitText(fixed + text, 1)
+            ic.endBatchEdit()
+            lastAutoCorrect = word to fixed
+            written = fixed
+        } else {
+            ic.commitText(text, 1)
+            lastAutoCorrect = null
+        }
+
+        if (written.isNotEmpty()) {
+            learn(written)
+            lastWord = written.lowercase()
+        }
+        composing.setLength(0)
+        pendingCorrection = null
+
+        // Majuscule automatique apres une fin de phrase
+        if (p.autoCapitalize && text in ".!?") {
+            keyboardView?.autoShift()
+        }
         updateSuggestions()
     }
 
     override fun onDelete() {
         val ic = currentInputConnection ?: return
+
+        // Retour arriere juste apres une correction auto : on remet le mot d'origine
+        val auto = lastAutoCorrect
+        if (auto != null) {
+            val (original, fixed) = auto
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(fixed.length + 1, 0)
+            ic.commitText(original, 1)
+            ic.endBatchEdit()
+            composing.setLength(0)
+            composing.append(original)
+            lastAutoCorrect = null
+            updateSuggestions()
+            return
+        }
+
         val selected = ic.getSelectedText(0)
         if (!selected.isNullOrEmpty()) {
             ic.commitText("", 1)
+            resync()
         } else {
             ic.deleteSurroundingText(1, 0)
+            if (composing.isNotEmpty()) {
+                composing.deleteCharAt(composing.length - 1)
+            } else {
+                resync()
+            }
         }
         updateSuggestions()
     }
@@ -389,6 +523,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         currentInputConnection?.let { expandShortcut(it, "") }
         learn(currentPrefix())
+        composing.setLength(0)
+        lastAutoCorrect = null
         val handled = sendDefaultEditorAction(true)
         if (!handled) {
             currentInputConnection?.commitText("\n", 1)
@@ -396,17 +532,23 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         updateSuggestions()
     }
 
-    override fun onSuggestion(word: String) {
+    override fun onSuggestion(raw: String) {
+        val word = raw.trim('\u201C', '\u201D', '"')
         val ic = currentInputConnection ?: return
         val prefix = currentPrefix()
-        if (prefix.isNotEmpty()) {
-            ic.deleteSurroundingText(prefix.length, 0)
-        }
         val prev = previousWord()
+        ic.beginBatchEdit()
+        if (prefix.isNotEmpty()) ic.deleteSurroundingText(prefix.length, 0)
         ic.commitText("$word ", 1)
-        val prefs = Prefs(this)
-        prefs.learnWord(word.lowercase(), prev)
-        prefs.learnWord(word.lowercase(), prev)
+        ic.endBatchEdit()
+        val p = prefs()
+        // Un mot choisi volontairement compte double dans l'apprentissage
+        p.learnWord(word.lowercase(), prev)
+        p.learnWord(word.lowercase(), prev)
+        composing.setLength(0)
+        lastWord = word.lowercase()
+        lastAutoCorrect = null
+        pendingCorrection = null
         updateSuggestions()
     }
 

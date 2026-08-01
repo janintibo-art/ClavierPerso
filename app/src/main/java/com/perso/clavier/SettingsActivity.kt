@@ -160,7 +160,8 @@ class SettingsActivity : Activity() {
             addView(preview)
         }
         root.addView(previewCard)
-        preview.suggestions = listOf("correction", "bonjour", "merci")
+        preview.suggestions = listOf("corection", "correction", "corrections")
+        preview.highlightIndex = 1
 
         // ----- Thèmes prédéfinis -----
         root.addView(section("Thèmes prédéfinis (${Themes.list.size})"))
@@ -249,6 +250,16 @@ class SettingsActivity : Activity() {
         })
         root.addView(switchRow("Suggestions de mots", prefs.suggestionsEnabled) {
             prefs.suggestionsEnabled = it
+        })
+        root.addView(switchRow("Correction automatique (sur espace)", prefs.autoCorrect) {
+            prefs.autoCorrect = it
+        })
+        root.addView(hint("Un retour arrière juste après annule la correction et remet ton mot."))
+        root.addView(switchRow("Majuscule automatique en début de phrase", prefs.autoCapitalize) {
+            prefs.autoCapitalize = it
+        })
+        root.addView(switchRow("Double espace = point", prefs.doubleSpacePeriod) {
+            prefs.doubleSpacePeriod = it
         })
         root.addView(switchRow("Clavier intelligent (apprend tes mots)", prefs.learningEnabled) {
             prefs.learningEnabled = it

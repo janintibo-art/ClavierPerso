@@ -9,6 +9,17 @@ class Prefs(context: Context) {
 
     private val sp = context.getSharedPreferences("clavier", Context.MODE_PRIVATE)
 
+    companion object {
+        /** Caches partages : evitent de relire et reparser le JSON a chaque touche. */
+        private var countsCache: Map<String, Int>? = null
+        private var bigramCache: HashMap<String, List<String>>? = null
+
+        fun invalidateCaches() {
+            countsCache = null
+            bigramCache = null
+        }
+    }
+
     // ----- Couleurs personnalisées (défaut : thème Sombre) -----
 
     private fun getC(key: String, def: String) = sp.getInt(key, Color.parseColor(def))
@@ -264,16 +275,19 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("learning", true)
         set(v) { sp.edit().putBoolean("learning", v).apply() }
 
-    /** Mot -> nombre de fois ou l'utilisateur l'a ecrit. */
+    /** Mot -> nombre de fois ou l'utilisateur l'a ecrit. Mis en cache memoire. */
     fun wordCounts(): Map<String, Int> {
-        return try {
+        countsCache?.let { return it }
+        val map = try {
             val obj = JSONObject(sp.getString("freq", "{}") ?: "{}")
-            val map = HashMap<String, Int>(obj.length())
-            for (k in obj.keys()) map[k] = obj.optInt(k, 1)
-            map
+            val m = HashMap<String, Int>(obj.length())
+            for (k in obj.keys()) m[k] = obj.optInt(k, 1)
+            m
         } catch (e: Exception) {
-            emptyMap()
+            emptyMap<String, Int>()
         }
+        countsCache = map
+        return map
     }
 
     val learnedWords: Set<String>
@@ -313,28 +327,54 @@ class Prefs(context: Context) {
                 e.putString("bigrams", big.toString())
             }
             e.apply()
+            invalidateCaches()
         } catch (_: Exception) {
         }
     }
 
     /** Mots qui suivent souvent [previous], du plus frequent au moins frequent. */
     fun nextWords(previous: String): List<String> {
-        return try {
+        val key = previous.lowercase()
+        bigramCache?.let { cache -> cache[key]?.let { return it } }
+        val result = try {
             val big = JSONObject(sp.getString("bigrams", "{}") ?: "{}")
-            val nexts = big.optJSONObject(previous.lowercase()) ?: return emptyList()
-            nexts.keys().asSequence()
+            val nexts = big.optJSONObject(key)
+            if (nexts == null) emptyList()
+            else nexts.keys().asSequence()
                 .map { it to nexts.optInt(it, 0) }
                 .sortedByDescending { it.second }
                 .map { it.first }
                 .toList()
         } catch (e: Exception) {
-            emptyList()
+            emptyList<String>()
         }
+        val cache = bigramCache ?: HashMap<String, List<String>>().also { bigramCache = it }
+        if (cache.size > 200) cache.clear()
+        cache[key] = result
+        return result
     }
 
     fun forgetLearnedWords() {
         sp.edit().remove("freq").remove("bigrams").remove("learned").apply()
+        invalidateCaches()
     }
+
+    // ----- Saisie assistee -----
+
+    /** Corrige automatiquement le mot quand on tape espace. */
+    var autoCorrect: Boolean
+        get() = sp.getBoolean("auto_correct", true)
+        set(v) { sp.edit().putBoolean("auto_correct", v).apply() }
+
+    /** Majuscule automatique en debut de phrase. */
+    var autoCapitalize: Boolean
+        get() = sp.getBoolean("auto_cap", true)
+        set(v) { sp.edit().putBoolean("auto_cap", v).apply() }
+
+    /** Double espace = point + espace. */
+    var doubleSpacePeriod: Boolean
+        get() = sp.getBoolean("double_space", true)
+        set(v) { sp.edit().putBoolean("double_space", v).apply() }
 
     // ----- Options -----
 
