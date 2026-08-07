@@ -62,6 +62,11 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    override fun onFinishInputView(finishingInput: Boolean) {
+        hidePanel()
+        super.onFinishInputView(finishingInput)
+    }
+
     override fun onDestroy() {
         try {
             (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
@@ -89,6 +94,15 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboardView = kb
         container = frame
         return frame
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        // Bouton Retour : on ferme d'abord le panneau ouvert (emojis, GIF, presse-papiers...)
+        if (keyCode == KeyEvent.KEYCODE_BACK && panel != null) {
+            hidePanel()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onUpdateSelection(

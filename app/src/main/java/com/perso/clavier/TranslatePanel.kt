@@ -28,11 +28,15 @@ class TranslatePanel(
             setPadding(dp(8), dp(6), dp(8), dp(6))
         }
         header.addView(TextView(context).apply {
-            text = "ABC"
-            textSize = 15f
-            setTextColor(prefs.colorText)
-            setBackgroundColor(prefs.colorSpecial)
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            text = "✕"
+            textSize = 17f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(prefs.colorTextOnAccent)
+            background = GradientDrawable().apply {
+                setColor(prefs.colorAccent)
+                cornerRadius = dp(10).toFloat()
+            }
+            setPadding(dp(15), dp(12), dp(15), dp(12))
             setOnClickListener { onBack() }
         })
         header.addView(TextView(context).apply {

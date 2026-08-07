@@ -34,11 +34,15 @@ class ClipboardPanel(
             setPadding(dp(8), dp(6), dp(8), dp(6))
         }
         header.addView(TextView(context).apply {
-            text = "ABC"
+            text = "✕  Fermer"
             textSize = 15f
-            setTextColor(prefs.colorText)
-            setBackgroundColor(prefs.colorSpecial)
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(prefs.colorTextOnAccent)
+            background = GradientDrawable().apply {
+                setColor(prefs.colorAccent)
+                cornerRadius = dp(10).toFloat()
+            }
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             setOnClickListener { onBack() }
         })
         header.addView(TextView(context).apply {

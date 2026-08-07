@@ -59,12 +59,16 @@ class EmojiPanel(
             setPadding(dp(8), dp(4), dp(8), dp(8))
         }
         bottom.addView(TextView(context).apply {
-            text = "ABC"
+            text = "✕  ABC"
             textSize = 16f
             gravity = Gravity.CENTER
-            setTextColor(prefs.colorText)
-            setPadding(dp(24), dp(10), dp(24), dp(10))
-            setBackgroundColor(prefs.colorSpecial)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(prefs.colorTextOnAccent)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(prefs.colorAccent)
+                cornerRadius = dp(10).toFloat()
+            }
+            setPadding(dp(24), dp(12), dp(24), dp(12))
             setOnClickListener { onBack() }
         })
         bottom.addView(TextView(context).apply {

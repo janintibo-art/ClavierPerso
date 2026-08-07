@@ -54,7 +54,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_LANG = -9
         const val CODE_GIF = -10
         const val CODE_TRANSLATE = -14
-        const val CODE_SUG = -11 // -11, -12, -13
+        // Les suggestions occupent une plage FERMEE : -11, -12, -13.
+        // Tout nouveau code doit rester en dehors de cette plage.
+        const val CODE_SUG = -11
+        const val CODE_SUG_LAST = -13
         const val BG_FILE = "bg_image"
     }
 
@@ -691,15 +694,17 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 feedback()
                 addRipple(key)
 
-                // Delais adaptes a la sensibilite choisie
+                // Delais adaptes a la sensibilite, avec un plancher :
+                // sans lui, une sensibilite elevee transformait un simple appui en appui long.
                 val f = prefs.sensitivity.coerceIn(30, 200) / 100f
+                fun delay(base: Int, floor: Int = 300) = (base * f).toLong().coerceAtLeast(floor.toLong())
                 when {
-                    key.code == CODE_DEL -> handler.postDelayed(repeatDelete, (400 * f).toLong())
-                    key.code == CODE_PASTE -> handler.postDelayed(clipPanelRunnable, (450 * f).toLong())
-                    key.code == CODE_ENTER -> handler.postDelayed(rewriteRunnable, (500 * f).toLong())
+                    key.code == CODE_DEL -> handler.postDelayed(repeatDelete, delay(400, 320))
+                    key.code == CODE_PASTE -> handler.postDelayed(clipPanelRunnable, delay(450, 400))
+                    key.code == CODE_ENTER -> handler.postDelayed(rewriteRunnable, delay(500, 450))
                     key.code >= 0 && !symbols &&
                             Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label) ->
-                        handler.postDelayed(accentRunnable, (380 * f).toLong())
+                        handler.postDelayed(accentRunnable, delay(380, 300))
                 }
 
                 // Frappe instantanee : la lettre part des le contact
@@ -764,7 +769,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private fun handleKey(key: Key) {
         when {
-            key.code <= CODE_SUG -> listener.onSuggestion(key.label)
+            key.code <= CODE_SUG && key.code >= CODE_SUG_LAST ->
+                listener.onSuggestion(key.label)
             key.code == CODE_SHIFT -> {
                 val now = System.currentTimeMillis()
                 when {
