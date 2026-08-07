@@ -512,7 +512,11 @@ class SettingsActivity : Activity() {
             "Une clé IA améliore énormément la traduction, la correction (✅) et la reformulation. " +
                     "Compatible OpenAI, Groq, Mistral, DeepSeek, OpenRouter…"
         ))
-        root.addView(keyField("Clé IA (sk-…)", prefs.aiKey) { prefs.aiKey = it })
+        root.addView(hint(
+            "Astuce : une clé qui commence par gsk_ vient de Groq, xai- vient de xAI Grok, " +
+                    "sk- de OpenAI. Utilise le bouton ci-dessous pour remplir URL et modèle."
+        ))
+        root.addView(keyField("Clé IA", prefs.aiKey) { prefs.aiKey = it })
         root.addView(keyField("URL de l'API IA", prefs.aiBaseUrl) { prefs.aiBaseUrl = it })
         root.addView(keyField("Modèle IA", prefs.aiModel) { prefs.aiModel = it })
         root.addView(hint(
@@ -520,6 +524,7 @@ class SettingsActivity : Activity() {
                     "email pro, résumé, idées…), écris ta demande, appuie sur ➜. " +
                     "Le résultat remplace ta demande, prêt à envoyer. ⌫ annule."
         ))
+        root.addView(button("⚡ Remplir automatiquement (Groq, xAI…)") { aiPresetDialog() })
         root.addView(button("🧪 Tester la clé IA") {
             Thread {
                 val r = AiClient.test(Prefs(this))
@@ -800,6 +805,32 @@ class SettingsActivity : Activity() {
         }
         Toast.makeText(this, "✅ " + n + " réglages restaurés. Rouvre les réglages.", Toast.LENGTH_LONG).show()
         recreate()
+    }
+
+    /** Remplit l'URL et le modèle selon le fournisseur choisi. */
+    private fun aiPresetDialog() {
+        val presets = listOf(
+            Triple("Groq (gratuit, très rapide)", "https://api.groq.com/openai/v1", "openai/gpt-oss-20b"),
+            Triple("Groq (qualité supérieure)", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
+            Triple("xAI Grok", "https://api.x.ai/v1", "grok-4.5"),
+            Triple("xAI Grok (rapide, moins cher)", "https://api.x.ai/v1", "grok-4.1-fast"),
+            Triple("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
+            Triple("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
+            Triple("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
+            Triple("OpenRouter", "https://openrouter.ai/api/v1", "openai/gpt-4o-mini")
+        )
+        val labels = presets.map { it.first + "\n" + it.third }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Ton fournisseur d'IA")
+            .setItems(labels) { _, which ->
+                val (name, url, model) = presets[which]
+                prefs.aiBaseUrl = url
+                prefs.aiModel = model
+                Toast.makeText(this, name + " configuré. Colle ta clé puis teste.", Toast.LENGTH_LONG).show()
+                recreate()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
     }
 
     private fun alert(title: String, message: String) {
