@@ -31,6 +31,20 @@ Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 - **Tolérance de zone** : rattrape les appuis entre deux touches
 - **Effets à la frappe** : Couleur, Onde, Zoom, Éclat, Étincelles (durée et couleur réglables)
 
+## Assistance à l'écriture
+- **Suggestions d'emojis** pendant la frappe (« amour » → ❤️)
+- **Détection des codes SMS** : le code reçu est proposé dans la barre
+- **Pavé de navigation** (appui long sur ?123) : flèches, annuler/rétablir, copier/couper/coller
+- **Changement de langue automatique** selon ce que tu écris
+- **Mode privé** : rien n'est appris dans les champs mot de passe
+- **Emojis récents et recherche** par mot-clé
+
+## Assistant IA 🤖
+- 10 modes (recherche Google, mot d'excuse, email pro, résumé, idées…)
+- **Suivi** après une réponse : « Plus court », « En anglais », « Autre version »
+- **Compléter ma phrase** : appui long sur 🤖
+- ⌫ annule et restaure ta demande
+
 ## Personnalisation
 - 20 thèmes prédéfinis
 - Couleur libre pour chaque élément (RVB + hexadécimal)
@@ -38,6 +52,10 @@ Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 - **Mode RGB animé** : Vague, Respiration, Réactif à la frappe, Cascade (vitesse et intensité réglables)
 - Luminosité globale des touches
 - **Image d'arrière-plan** avec assombrissement, luminosité, saturation et flou
+- **8 polices** au choix pour les touches
+- **7 sons de frappe** (clic, mécanique, machine à écrire, bulle, néon…) avec volume réglable
+- **Thème différent par application** (sombre pour la nuit, sobre pour le travail)
+- **Sauvegarde et restauration** complète de tous les réglages
 - Opacité des touches, hauteur, taille du texte
 - Bulle d'aperçu au-dessus de la touche, vibration, son
 - **Aperçu en direct** dans les réglages

@@ -32,7 +32,9 @@ class SettingsActivity : Activity() {
         const val PICK_TEXT_FILE = 44
         const val REQ_CONTACTS = 51
         const val REQ_SMS = 52
+        const val REQ_SMS_CODE = 53
         const val PICK_CHAT = 45
+        const val PICK_BACKUP = 46
     }
 
     private lateinit var prefs: Prefs
@@ -41,6 +43,7 @@ class SettingsActivity : Activity() {
     private lateinit var shortcutsContainer: LinearLayout
     private var keyEditMode = false
     private var memoryRefresher: (() -> Unit)? = null
+    private lateinit var appThemesInfo: TextView
     private lateinit var preview: KeyboardView
     private lateinit var testField: EditText
 
@@ -107,6 +110,14 @@ class SettingsActivity : Activity() {
 
         override fun onAiToggle() {
             Toast.makeText(this@SettingsActivity, "L'assistant IA s'utilise dans le vrai clavier (🤖)", Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onNavPanel() {
+            Toast.makeText(this@SettingsActivity, "Le pavé de navigation s'ouvre dans le vrai clavier (appui long sur ?123)", Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onAiFollowUp(instruction: String) {
+            Toast.makeText(this@SettingsActivity, "Disponible dans le vrai clavier", Toast.LENGTH_SHORT).show()
         }
 
         override fun onLangSwitch() {
@@ -421,6 +432,68 @@ class SettingsActivity : Activity() {
             Toast.makeText(this, "Couleurs des touches réinitialisées", Toast.LENGTH_SHORT).show()
         })
 
+        // ----- Police -----
+        root.addView(section("Police des touches"))
+        root.addView(choiceRow(Fonts.names, prefs.fontIndex, 11f) {
+            prefs.fontIndex = it
+            preview.refresh()
+        })
+
+        // ----- Sons -----
+        root.addView(section("Son de frappe 🔊"))
+        root.addView(hint("Active « Son des touches » dans Options, puis choisis un son :"))
+        root.addView(choiceRow(KeySounds.names, prefs.soundType, 10f) {
+            prefs.soundType = it
+            prefs.sound = true
+            preview.refresh()
+        })
+        root.addView(hint("Volume du son"))
+        root.addView(seek(10, 100, prefs.soundVolume) {
+            prefs.soundVolume = it
+            preview.refresh()
+        })
+
+        // ----- Theme par application -----
+        root.addView(section("Thème par application"))
+        root.addView(hint("Associe un thème à une application : le clavier changera d'apparence automatiquement."))
+        root.addView(button("➕ Associer une application à un thème") { appThemeDialog() })
+        appThemesInfo = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#5F6368"))
+            setPadding(dp(4), dp(6), dp(4), dp(2))
+        }
+        root.addView(appThemesInfo)
+        refreshAppThemes()
+
+        // ----- Ecriture assistee -----
+        root.addView(section("Écriture assistée"))
+        root.addView(switchRow("Suggestions d'emojis pendant la frappe", prefs.emojiSuggestions) {
+            prefs.emojiSuggestions = it
+        })
+        root.addView(switchRow("Détecter les codes reçus par SMS", prefs.smsCodeDetection) {
+            prefs.smsCodeDetection = it
+            if (it && checkSelfPermission(android.Manifest.permission.READ_SMS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) requestPermissions(arrayOf(android.Manifest.permission.READ_SMS), REQ_SMS_CODE)
+        })
+        root.addView(switchRow("Changer de langue automatiquement", prefs.autoLanguage) {
+            prefs.autoLanguage = it
+        })
+        root.addView(switchRow("Mode privé dans les champs sensibles", prefs.incognitoFields) {
+            prefs.incognitoFields = it
+        })
+        root.addView(hint("Mode privé : aucun mot appris ni suggéré dans les champs mot de passe et numéros."))
+        root.addView(hint("Appui long sur ?123 : pavé de navigation (flèches, annuler, copier, coller).\nAppui long sur 🤖 : l'IA complète ta phrase."))
+
+        // ----- Sauvegarde -----
+        root.addView(section("Sauvegarde et restauration 💾"))
+        root.addView(hint(Backup.summary(this)))
+        root.addView(button("💾 Sauvegarder mes réglages") { exportBackup() })
+        root.addView(button("♻️ Restaurer une sauvegarde") {
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*" }
+            startActivityForResult(Intent.createChooser(intent, "Choisir la sauvegarde"), PICK_BACKUP)
+        })
+
         root.addView(section("Raccourcis texte"))
         root.addView(hint("Tape le raccourci puis espace : il est remplace par le texte complet. Exemple : slt -> Salut, ca va ?"))
         shortcutsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -522,6 +595,16 @@ class SettingsActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_BACKUP && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                applyBackup(text)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Impossible de lire le fichier", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (requestCode == PICK_CHAT && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             try {
@@ -570,6 +653,154 @@ class SettingsActivity : Activity() {
     }
 
     // ---------- Construction de l'interface ----------
+
+    /** Rangée de boutons de choix exclusifs. */
+    private fun choiceRow(
+        labels: List<String>, selected: Int, textSize: Float, onPick: (Int) -> Unit
+    ): LinearLayout {
+        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val perRow = if (labels.size > 4) 4 else labels.size
+        val buttons = ArrayList<TextView>()
+        labels.chunked(perRow).forEachIndexed { rowIdx, chunk ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            chunk.forEachIndexed { i, name ->
+                val index = rowIdx * perRow + i
+                val tv = TextView(this).apply {
+                    text = name
+                    this.textSize = textSize
+                    gravity = Gravity.CENTER
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    background = rounded(
+                        Color.parseColor(if (index == selected) "#4A6CF7" else "#9AA0A6"), 10
+                    )
+                    setPadding(dp(3), dp(10), dp(3), dp(10))
+                    val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    lp.setMargins(dp(3), dp(3), dp(3), dp(3))
+                    layoutParams = lp
+                    setOnClickListener {
+                        onPick(index)
+                        buttons.forEachIndexed { j, b ->
+                            b.background = rounded(
+                                Color.parseColor(if (j == index) "#4A6CF7" else "#9AA0A6"), 10
+                            )
+                        }
+                    }
+                }
+                buttons.add(tv)
+                row.addView(tv)
+            }
+            repeat(perRow - chunk.size) {
+                row.addView(TextView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                })
+            }
+            outer.addView(row)
+        }
+        return outer
+    }
+
+    private fun refreshAppThemes() {
+        val map = prefs.appThemes()
+        appThemesInfo.text = if (map.isEmpty()) "Aucune association pour l'instant."
+        else map.entries.joinToString("\n") { (pkg, idx) ->
+            appLabel(pkg) + "  →  " + Themes.get(idx).name + "   (touche pour retirer)"
+        }
+        appThemesInfo.setOnClickListener {
+            if (map.isEmpty()) return@setOnClickListener
+            val entries = map.entries.toList()
+            val labels = entries.map { appLabel(it.key) + " → " + Themes.get(it.value).name }
+            AlertDialog.Builder(this)
+                .setTitle("Retirer une association")
+                .setItems(labels.toTypedArray()) { _, which ->
+                    prefs.setAppTheme(entries[which].key, null)
+                    refreshAppThemes()
+                }
+                .setNegativeButton("Annuler", null)
+                .show()
+        }
+    }
+
+    private fun appLabel(pkg: String): String = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    } catch (e: Exception) {
+        pkg
+    }
+
+    private fun appThemeDialog() {
+        val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+        val apps = packageManager.queryIntentActivities(intent, 0)
+            .mapNotNull { it.activityInfo?.packageName }
+            .distinct()
+            .sortedBy { appLabel(it).lowercase() }
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "Aucune application trouvée", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = apps.map { appLabel(it) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Choisis une application")
+            .setItems(labels) { _, which ->
+                val pkg = apps[which]
+                val themeNames = Themes.list.map { it.name }.toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle("Thème pour " + labels[which])
+                    .setItems(themeNames) { _, t ->
+                        prefs.setAppTheme(pkg, t)
+                        refreshAppThemes()
+                        Toast.makeText(this, labels[which] + " → " + themeNames[t], Toast.LENGTH_SHORT).show()
+                    }
+                    .show()
+            }
+            .show()
+    }
+
+    private fun exportBackup() {
+        val text = Backup.export(this)
+        val field = EditText(this).apply {
+            setText(text.take(4000))
+            minLines = 4
+            textSize = 10f
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Sauvegarde")
+            .setMessage("Copie ce texte et garde-le en lieu sûr (note, mail, fichier).")
+            .setView(ScrollView(this).apply { addView(field) })
+            .setPositiveButton("Copier tout") { _, _ ->
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Sauvegarde clavier", text))
+                Toast.makeText(this, "Sauvegarde copiée ✅", Toast.LENGTH_LONG).show()
+            }
+            .setNeutralButton("Coller une sauvegarde") { _, _ -> importBackupDialog() }
+            .setNegativeButton("Fermer", null)
+            .show()
+    }
+
+    private fun importBackupDialog() {
+        val field = EditText(this).apply {
+            hint = "Colle ici le texte de ta sauvegarde…"
+            minLines = 5
+            gravity = Gravity.TOP
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Restaurer")
+            .setView(ScrollView(this).apply { addView(field) })
+            .setPositiveButton("Restaurer") { _, _ -> applyBackup(field.text.toString()) }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun applyBackup(text: String) {
+        val n = Backup.import(this, text)
+        if (n < 0) {
+            Toast.makeText(this, "Sauvegarde illisible", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "✅ " + n + " réglages restaurés. Rouvre les réglages.", Toast.LENGTH_LONG).show()
+        recreate()
+    }
 
     private fun alert(title: String, message: String) {
         AlertDialog.Builder(this)

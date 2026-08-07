@@ -38,6 +38,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onTranslateToggle()
         fun onFixSpelling()
         fun onAiToggle()
+        fun onNavPanel()
+        fun onAiFollowUp(instruction: String)
         fun onMoveCursor(delta: Int)
         fun onClipboardPanel()
         fun onRewrite()
@@ -58,6 +60,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_TRANSLATE = -14
         const val CODE_FIX = -15
         const val CODE_AI = -16
+        const val CODE_NAV = -17
         // Les suggestions occupent une plage FERMEE : -11, -12, -13.
         // Tout nouveau code doit rester en dehors de cette plage.
         const val CODE_SUG = -11
@@ -74,6 +77,20 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private var prefs = Prefs(context)
     private var bgBitmap: Bitmap? = null
+
+    /** Thème imposé par l'application en cours d'utilisation (null = couleurs habituelles). */
+    var appTheme: Theme? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    private fun colBg() = appTheme?.bg ?: prefs.colorBg
+    private fun colKey() = appTheme?.key ?: prefs.colorKey
+    private fun colSpecial() = appTheme?.special ?: prefs.colorSpecial
+    private fun colAccent() = appTheme?.accent ?: prefs.colorAccent
+    private fun colText() = appTheme?.text ?: prefs.colorText
+    private fun colTextAccent() = appTheme?.textOnAccent ?: prefs.colorTextOnAccent
 
     var translateMode: String? = null
         set(value) {
@@ -139,6 +156,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     fun refresh() {
         prefs = Prefs(context)
+        textPaint.typeface = Fonts.get(prefs.fontIndex)
         bgBitmap = null
         if (prefs.bgImageEnabled) {
             val f = File(context.filesDir, BG_FILE)
@@ -350,7 +368,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             canvas.drawBitmap(bmp, src, Rect(0, 0, width, height), bgPaint)
             canvas.drawColor(Color.argb(prefs.bgDim.coerceIn(0, 90) * 255 / 100, 0, 0, 0))
         } else {
-            canvas.drawColor(prefs.colorBg)
+            canvas.drawColor(colBg())
         }
 
         keyRects.clear()
@@ -364,13 +382,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             keyRects.add(key to rect)
             val lit = key === pressedKey || active
             if (lit) {
-                keyPaint.color = withOpacity(prefs.colorAccent)
+                keyPaint.color = withOpacity(colAccent())
                 canvas.drawRoundRect(
                     RectF(rect.left + dp(3f), rect.top + dp(4f), rect.right - dp(3f), rect.bottom - dp(4f)),
                     dp(8f), dp(8f), keyPaint
                 )
             }
-            textPaint.color = if (lit) prefs.colorTextOnAccent else prefs.colorText
+            textPaint.color = if (lit) colTextAccent() else colText()
 
             // Reduire puis tronquer pour ne jamais deborder sur le voisin
             val avail = rect.width() - dp(8f)
@@ -409,7 +427,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             topItem(key, r, size, active = on)
         }
 
-        linePaint.color = (0x28 shl 24) or (prefs.colorText and 0xFFFFFF)
+        linePaint.color = (0x28 shl 24) or (colText() and 0xFFFFFF)
         linePaint.strokeWidth = dp(1f)
 
         // ---------- Barre 2 : suggestions (pleine largeur) ----------
@@ -470,9 +488,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                         key.code == CODE_ENTER ||
                         (key.code == CODE_SHIFT && (shift || caps))
                 var base = when {
-                    isAccent -> prefs.colorAccent
-                    key.code < 0 -> prefs.colorSpecial
-                    else -> prefs.colorKey
+                    isAccent -> colAccent()
+                    key.code < 0 -> colSpecial()
+                    else -> colKey()
                 }
                 // Couleur specifique a cette touche
                 prefs.keyColor(key.label)?.let { if (!isAccent) base = it }
@@ -487,9 +505,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 canvas.drawRoundRect(rect, radius, radius, keyPaint)
 
                 textPaint.color = when {
-                    isAccent -> prefs.colorTextOnAccent
+                    isAccent -> colTextAccent()
                     rgb != null && prefs.rgbText -> rgb
-                    else -> prefs.colorText
+                    else -> colText()
                 }
                 textPaint.textSize = if (key.label.length > 2)
                     sp(prefs.textSize * 0.62f) else sp(prefs.textSize.toFloat())
@@ -516,9 +534,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 var top = bottom - bh
                 if (top < 0f) { top = 0f; bottom = bh }
                 val bubble = RectF(cx - bw / 2, top, cx + bw / 2, bottom)
-                keyPaint.color = prefs.colorAccent
+                keyPaint.color = colAccent()
                 canvas.drawRoundRect(bubble, dp(10f), dp(10f), keyPaint)
-                textPaint.color = prefs.colorTextOnAccent
+                textPaint.color = colTextAccent()
                 textPaint.textSize = sp(prefs.textSize * 1.35f)
                 val ty = bubble.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
                 canvas.drawText(displayLabel(pk), bubble.centerX(), ty, textPaint)
@@ -688,6 +706,20 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         listener.onRewrite()
     }
 
+    private val navPanelRunnable = Runnable {
+        longPressConsumed = true
+        pressedKey = null
+        invalidate()
+        listener.onNavPanel()
+    }
+
+    private val completeRunnable = Runnable {
+        longPressConsumed = true
+        pressedKey = null
+        invalidate()
+        listener.onAiFollowUp("__complete__")
+    }
+
     private val accentRunnable = Runnable {
         val key = pressedKey ?: return@Runnable
         val acc = Layouts.accents(prefs.langIndex.coerceIn(0, 2))[key.label] ?: return@Runnable
@@ -723,6 +755,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 when {
                     key.code == CODE_DEL -> handler.postDelayed(repeatDelete, delay(400, 320))
                     key.code == CODE_PASTE -> handler.postDelayed(clipPanelRunnable, delay(450, 400))
+                    key.code == CODE_SYM -> handler.postDelayed(navPanelRunnable, delay(450, 400))
+                    key.code == CODE_AI -> handler.postDelayed(completeRunnable, delay(500, 450))
                     key.code == CODE_ENTER -> handler.postDelayed(rewriteRunnable, delay(500, 450))
                     key.code >= 0 && !symbols &&
                             Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label) ->
@@ -830,7 +864,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         }
         if (prefs.sound) {
-            audio.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.6f)
+            val type = prefs.soundType
+            if (type == 0) {
+                audio.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, prefs.soundVolume / 100f)
+            } else {
+                val special = pressedKey?.code?.let { it < 0 } ?: false
+                KeySounds.play(type, prefs.soundVolume, special)
+            }
         }
     }
 }

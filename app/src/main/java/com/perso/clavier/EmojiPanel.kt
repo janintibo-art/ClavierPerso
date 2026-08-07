@@ -37,8 +37,34 @@ class EmojiPanel(
         setBackgroundColor(prefs.colorBg)
         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, panelHeight)
 
-        // Onglets de catégories
+        // Barre de recherche
+        val search = android.widget.EditText(context).apply {
+            hint = "Rechercher un emoji…"
+            setHintTextColor((0x80 shl 24) or (prefs.colorText and 0xFFFFFF))
+            setTextColor(prefs.colorText)
+            textSize = 14f
+            maxLines = 1
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun afterTextChanged(sq: android.text.Editable?) {
+                    val q = sq.toString().trim()
+                    if (q.isEmpty()) showCategory(currentTab) else showSearch(q)
+                }
+                override fun beforeTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
+        }
+        addView(search)
+
+        // Onglets : récents puis catégories
         val tabs = LinearLayout(context).apply { orientation = HORIZONTAL }
+        tabs.addView(TextView(context).apply {
+            text = "🕘"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener { showRecents() }
+        })
         categories.forEachIndexed { index, (icon, _) ->
             tabs.addView(TextView(context).apply {
                 text = icon
@@ -91,9 +117,56 @@ class EmojiPanel(
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    private var currentTab = 0
+
+    private fun showRecents() {
+        val recents = prefs.recentEmojis()
+        if (recents.isEmpty()) {
+            grid.removeAllViews()
+            grid.addView(TextView(context).apply {
+                text = "Aucun emoji récent pour l'instant."
+                textSize = 14f
+                setTextColor(prefs.colorText)
+                setPadding(dp(14), dp(20), dp(14), dp(10))
+            })
+            return
+        }
+        display(recents)
+    }
+
+    private fun showSearch(query: String) {
+        val q = Dictionary.normalize(query)
+        val found = LinkedHashSet<String>()
+        // Correspondance par mot-cle
+        EmojiSuggest.forWord(query)?.let { found.add(it) }
+        for ((_, list) in categories) {
+            for (e in list) if (e.isNotBlank() && found.size < 40) {
+                // On garde tout si la recherche est courte, sinon on filtre par mot-cle
+                if (q.length <= 1) found.add(e)
+            }
+        }
+        val keyed = EmojiKeywords.search(query)
+        keyed.forEach { found.add(it) }
+        if (found.isEmpty()) {
+            grid.removeAllViews()
+            grid.addView(TextView(context).apply {
+                text = "Aucun emoji trouvé pour « " + query + " »"
+                textSize = 14f
+                setTextColor(prefs.colorText)
+                setPadding(dp(14), dp(20), dp(14), dp(10))
+            })
+            return
+        }
+        display(found.toList())
+    }
+
     private fun showCategory(index: Int) {
+        currentTab = index
+        display(categories[index].second.filter { it.isNotBlank() })
+    }
+
+    private fun display(emojis: List<String>) {
         grid.removeAllViews()
-        val emojis = categories[index].second.filter { it.isNotBlank() }
         emojis.chunked(8).forEach { chunk ->
             val row = LinearLayout(context).apply { orientation = HORIZONTAL }
             chunk.forEach { emoji ->
@@ -103,7 +176,10 @@ class EmojiPanel(
                     gravity = Gravity.CENTER
                     layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
                     setPadding(0, dp(8), 0, dp(8))
-                    setOnClickListener { onEmoji(emoji) }
+                    setOnClickListener {
+                        prefs.addRecentEmoji(emoji)
+                        onEmoji(emoji)
+                    }
                 })
             }
             // Compléter la dernière rangée pour garder l'alignement

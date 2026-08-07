@@ -242,6 +242,73 @@ class Prefs(context: Context) {
         saveClips(clips().filter { it.second })
     }
 
+    // ----- Sons, police, themes par application -----
+
+    /** Index dans KeySounds.names. */
+    var soundType: Int
+        get() = sp.getInt("sound_type", 0)
+        set(v) { sp.edit().putInt("sound_type", v).apply() }
+
+    var soundVolume: Int
+        get() = sp.getInt("sound_volume", 60)
+        set(v) { sp.edit().putInt("sound_volume", v).apply() }
+
+    /** Index dans Fonts.names. */
+    var fontIndex: Int
+        get() = sp.getInt("font", 0)
+        set(v) { sp.edit().putInt("font", v).apply() }
+
+    /** Thème associé à une application (nom de paquet -> index de thème). */
+    fun appThemes(): Map<String, Int> {
+        return try {
+            val obj = JSONObject(sp.getString("app_themes", "{}") ?: "{}")
+            val m = HashMap<String, Int>()
+            for (k in obj.keys()) m[k] = obj.optInt(k, -1)
+            m
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun setAppTheme(pkg: String, themeIndex: Int?) {
+        try {
+            val obj = JSONObject(sp.getString("app_themes", "{}") ?: "{}")
+            if (themeIndex == null) obj.remove(pkg) else obj.put(pkg, themeIndex)
+            sp.edit().putString("app_themes", obj.toString()).apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    // ----- Ecriture assistee -----
+
+    var emojiSuggestions: Boolean
+        get() = sp.getBoolean("emoji_sug", true)
+        set(v) { sp.edit().putBoolean("emoji_sug", v).apply() }
+
+    var smsCodeDetection: Boolean
+        get() = sp.getBoolean("sms_code", true)
+        set(v) { sp.edit().putBoolean("sms_code", v).apply() }
+
+    var autoLanguage: Boolean
+        get() = sp.getBoolean("auto_lang", false)
+        set(v) { sp.edit().putBoolean("auto_lang", v).apply() }
+
+    var incognitoFields: Boolean
+        get() = sp.getBoolean("incognito", true)
+        set(v) { sp.edit().putBoolean("incognito", v).apply() }
+
+    /** Emojis recemment utilises, du plus recent au plus ancien. */
+    fun recentEmojis(): List<String> =
+        (sp.getString("recent_emojis", "") ?: "").split("\u0001").filter { it.isNotBlank() }
+
+    fun addRecentEmoji(e: String) {
+        val list = ArrayList(recentEmojis())
+        list.remove(e)
+        list.add(0, e)
+        while (list.size > 32) list.removeAt(list.size - 1)
+        sp.edit().putString("recent_emojis", list.joinToString("\u0001")).apply()
+    }
+
     // ----- Cles de services -----
 
     /** Cle IA (compatible OpenAI, Groq, Mistral, OpenRouter...). */

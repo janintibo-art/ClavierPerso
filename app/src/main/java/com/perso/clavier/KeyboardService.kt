@@ -27,6 +27,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     private var translateTarget: Pair<String, String>? = null
     private var aiMode: AiModes.Mode? = null
     private var aiUndo: Pair<String, String>? = null
+    private var lastAiResult: String? = null
+    private var incognito = false
+    private var pendingSmsCode: String? = null
+    private var langVotes = 0
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
@@ -123,6 +127,31 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         prefsCache = null
+        val p = prefs()
+
+        // Thème associé à l'application en cours
+        val pkg = info?.packageName
+        val idx = if (pkg != null) p.appThemes()[pkg] else null
+        keyboardView?.appTheme = if (idx != null) Themes.get(idx) else null
+
+        // Champ sensible : on n'apprend rien et on masque les suggestions
+        val type = info?.inputType ?: 0
+        val variation = type and android.text.InputType.TYPE_MASK_VARIATION
+        val cls = type and android.text.InputType.TYPE_MASK_CLASS
+        incognito = p.incognitoFields && (
+                variation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                        variation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+                        variation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+                        variation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD ||
+                        cls == android.text.InputType.TYPE_CLASS_PHONE
+                )
+
+        // Code recu par SMS
+        pendingSmsCode = if (!incognito && p.smsCodeDetection &&
+            checkSelfPermission(android.Manifest.permission.READ_SMS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) SmsCode.latest(this) else null
+
         resync()
         hidePanel()
         captureClip()
@@ -359,9 +388,136 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
                 c.endBatchEdit()
                 // Un retour arriere juste apres restaure la demande d'origine
                 aiUndo = request to result
+                lastAiResult = result
                 resync()
                 updateSuggestions()
                 Toast.makeText(this, "Prêt à envoyer (⌫ pour annuler)", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onNavPanel() {
+        if (panel is NavPanel) {
+            hidePanel()
+            return
+        }
+        showPanel(
+            NavPanel(this, prefs(), panelHeight(),
+                onAction = { doNavAction(it) },
+                onBack = { hidePanel() })
+        )
+    }
+
+    private fun doNavAction(action: String) {
+        val ic = currentInputConnection ?: return
+        when (action) {
+            "left" -> sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
+            "right" -> sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
+            "up" -> sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP)
+            "down" -> sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN)
+            "home" -> sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
+            "end" -> sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END)
+            "top" -> {
+                sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
+                repeat(40) { sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP) }
+            }
+            "bottom" -> repeat(40) { sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN) }
+            "del" -> onDelete()
+            "forwardDel" -> ic.deleteSurroundingText(0, 1)
+            "selectAll" -> ic.performContextMenuAction(android.R.id.selectAll)
+            "copy" -> ic.performContextMenuAction(android.R.id.copy)
+            "cut" -> ic.performContextMenuAction(android.R.id.cut)
+            "paste" -> ic.performContextMenuAction(android.R.id.paste)
+            "undo" -> sendCtrl(KeyEvent.KEYCODE_Z, false)
+            "redo" -> sendCtrl(KeyEvent.KEYCODE_Z, true)
+        }
+        resync()
+        updateSuggestions()
+    }
+
+    /** Envoie Ctrl+Z ou Ctrl+Maj+Z (annuler / rétablir). */
+    private fun sendCtrl(keyCode: Int, shift: Boolean) {
+        val ic = currentInputConnection ?: return
+        var meta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
+        if (shift) meta = meta or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        val now = System.currentTimeMillis()
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, meta))
+    }
+
+    /** Retouche la derniere reponse de l'IA, ou complete la phrase en cours. */
+    override fun onAiFollowUp(instruction: String) {
+        if (instruction == "__complete__") {
+            completeSentence()
+            return
+        }
+        aiFollowUp(instruction)
+    }
+
+    private fun aiFollowUp(instruction: String) {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
+        val text = (before + after).trim()
+        if (text.isEmpty()) return
+        Toast.makeText(this, "🤖 …", Toast.LENGTH_SHORT).show()
+        thread {
+            val raw = AiClient.generate(
+                prefs(),
+                "Tu retouches un texte. Réponds UNIQUEMENT avec le texte final, " +
+                        "sans guillemets ni explication.",
+                instruction + " :\n\n" + text
+            )
+            mainHandler.post {
+                if (raw == null) {
+                    Toast.makeText(this, "Échec de l'IA", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+                val result = AiClient.cleanOutput(raw)
+                val c = currentInputConnection ?: return@post
+                c.beginBatchEdit()
+                c.deleteSurroundingText(before.length, after.length)
+                c.commitText(result, 1)
+                c.endBatchEdit()
+                aiUndo = text to result
+                lastAiResult = result
+                resync()
+                updateSuggestions()
+            }
+        }
+    }
+
+    /** Complete la phrase en cours d'ecriture (appui long sur 🤖). */
+    private fun completeSentence() {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
+        if (before.trim().length < 4) {
+            Toast.makeText(this, "Commence ta phrase, puis appui long sur 🤖", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "🤖 Je complète…", Toast.LENGTH_SHORT).show()
+        thread {
+            val raw = AiClient.generate(
+                prefs(),
+                "Tu complètes le texte de l'utilisateur. Réponds UNIQUEMENT avec la SUITE " +
+                        "du texte, sans répéter ce qui est déjà écrit, sans guillemets. " +
+                        "Une à deux phrases maximum, dans la même langue et le même ton.",
+                before
+            )
+            mainHandler.post {
+                if (raw == null) {
+                    Toast.makeText(this, "Échec de l'IA", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+                var suite = AiClient.cleanOutput(raw)
+                if (suite.isBlank()) return@post
+                if (!before.endsWith(" ") && !suite.startsWith(" ") &&
+                    !suite.startsWith(",") && !suite.startsWith(".")
+                ) suite = " " + suite
+                currentInputConnection?.commitText(suite, 1)
+                aiUndo = null
+                resync()
+                updateSuggestions()
             }
         }
     }
@@ -465,6 +621,23 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             pendingCorrection = null
             return
         }
+        // Code de verification recu par SMS : priorite absolue
+        val code = pendingSmsCode
+        if (code != null) {
+            kb.suggestions = listOf("\uD83D\uDCE9 $code", "\u2715")
+            kb.highlightIndex = 0
+            pendingCorrection = null
+            return
+        }
+
+        // Juste apres une reponse de l'IA : propositions de suivi
+        if (lastAiResult != null) {
+            kb.suggestions = listOf("✂️ Plus court", "🌍 En anglais", "🔁 Autre version")
+            kb.highlightIndex = -1
+            pendingCorrection = null
+            return
+        }
+
         val prefix = currentPrefix()
         val prev = previousWord()
         if (prefix.isEmpty() && prev.isEmpty()) {
@@ -485,8 +658,14 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
                 list = list.map { w -> w.replaceFirstChar { it.uppercase() } }
             }
             // Le mot tape reste affiche a gauche pour pouvoir le garder d'un doigt
-            val display = if (prefix.length >= 2 && !res.typedIsKnown && list.isNotEmpty())
+            var display = if (prefix.length >= 2 && !res.typedIsKnown && list.isNotEmpty())
                 listOf(prefix) + list.take(2) else list
+            // Emoji correspondant au mot ecrit
+            if (prefs().emojiSuggestions) {
+                EmojiSuggest.forWord(prefix)?.let { emo ->
+                    display = (listOf(emo) + display).take(3)
+                }
+            }
             mainHandler.post {
                 if (seq != suggestionSeq) return@post
                 keyboardView?.suggestions = display
@@ -496,7 +675,39 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    /**
+     * Detection automatique de la langue : si plusieurs mots d'affilee sont inconnus
+     * dans la langue courante mais connus dans une autre, on bascule.
+     */
+    private fun checkLanguage(word: String) {
+        if (word.length < 4) return
+        val current = prefs().langIndex
+        if (Dictionary.contains(this, current, word)) {
+            langVotes = 0
+            return
+        }
+        var other = -1
+        for (i in 0..2) {
+            if (i != current && Dictionary.contains(this, i, word)) {
+                other = i
+                break
+            }
+        }
+        if (other < 0) {
+            langVotes = 0
+            return
+        }
+        langVotes++
+        if (langVotes >= 3) {
+            langVotes = 0
+            prefs().langIndex = other
+            keyboardView?.refresh()
+            Toast.makeText(this, "🌐 " + Layouts.languages[other], Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun learn(word: String) {
+        if (incognito) return
         if (word.length >= 2 && word.all { it.isLetter() || it == '\'' }) {
             prefs().learnWord(word.lowercase(), previousWord())
         }
@@ -528,6 +739,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             composing.append(text)
             lastAutoCorrect = null
             aiUndo = null
+            lastAiResult = null
             updateSuggestions()
             return
         }
@@ -582,6 +794,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         if (written.isNotEmpty()) {
             learn(written)
             lastWord = written.lowercase()
+            if (p.autoLanguage) checkLanguage(written)
         }
         composing.setLength(0)
         pendingCorrection = null
@@ -665,18 +878,56 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onSuggestion(raw: String) {
-        val word = raw.trim('\u201C', '\u201D', '"')
         val ic = currentInputConnection ?: return
+
+        // Code recu par SMS
+        val code = pendingSmsCode
+        if (code != null) {
+            pendingSmsCode = null
+            if (raw == "\u2715") {
+                SmsCode.dismiss(code)
+            } else {
+                ic.commitText(code, 1)
+                SmsCode.dismiss(code)
+                resync()
+            }
+            updateSuggestions()
+            return
+        }
+
+        // Suivi apres une reponse de l'IA
+        if (lastAiResult != null && raw.length > 2 && !raw.first().isLetter()) {
+            when {
+                raw.contains("court") -> aiFollowUp("Raccourcis ce texte au maximum en gardant le sens")
+                raw.contains("anglais") -> aiFollowUp("Traduis ce texte en anglais")
+                raw.contains("Autre") -> aiFollowUp("Propose une autre version, différente, du même texte")
+                else -> {}
+            }
+            return
+        }
+
+        val word = raw.trim('\u201C', '\u201D', '"')
+
+        // Emoji propose
+        if (word.isNotEmpty() && !word.first().isLetterOrDigit() && word.length <= 3) {
+            ic.commitText(word, 1)
+            prefs().addRecentEmoji(word)
+            lastAiResult = null
+            updateSuggestions()
+            return
+        }
+
         val prefix = currentPrefix()
         val prev = previousWord()
         ic.beginBatchEdit()
         if (prefix.isNotEmpty()) ic.deleteSurroundingText(prefix.length, 0)
         ic.commitText("$word ", 1)
         ic.endBatchEdit()
-        val p = prefs()
-        // Un mot choisi volontairement compte double dans l'apprentissage
-        p.learnWord(word.lowercase(), prev)
-        p.learnWord(word.lowercase(), prev)
+        if (!incognito) {
+            val p = prefs()
+            p.learnWord(word.lowercase(), prev)
+            p.learnWord(word.lowercase(), prev)
+        }
         composing.setLength(0)
         lastWord = word.lowercase()
         lastAutoCorrect = null
