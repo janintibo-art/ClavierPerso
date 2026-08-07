@@ -432,6 +432,38 @@ class SettingsActivity : Activity() {
             Toast.makeText(this, "Couleurs des touches réinitialisées", Toast.LENGTH_SHORT).show()
         })
 
+        // ----- Memoire du clavier -----
+        root.addView(section("Mémoire du clavier 🧠"))
+        val memoryInfo = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#5F6368"))
+            setPadding(dp(4), dp(4), dp(4), dp(2))
+        }
+        fun refreshMemory() {
+            val counts = prefs.wordCounts()
+            val top = counts.entries.sortedByDescending { it.value }.take(8)
+                .joinToString(", ") { it.key + " (" + it.value + ")" }
+            memoryInfo.text = if (counts.isEmpty())
+                "Le clavier n'a encore rien appris. Utilise un bouton ci-dessous pour lui donner ton vocabulaire d'un coup."
+            else
+                counts.size.toString() + " mots appris, " + prefs.bigramCount() +
+                        " enchaînements.\nTes plus utilisés : " + top
+        }
+        refreshMemory()
+        memoryRefresher = { refreshMemory() }
+        root.addView(memoryInfo)
+        root.addView(hint("Plutôt que d'attendre des semaines, donne-lui directement ton vocabulaire :"))
+        root.addView(button("💬 Apprendre de mes SMS envoyés") { importSms() })
+        root.addView(button("👥 Apprendre les noms de mes contacts") { importContacts() })
+        root.addView(button("📱 Importer une conversation exportée") { importChatFile() })
+        root.addView(button("📝 Coller un texte que j'ai écrit") { importTextDialog() })
+        root.addView(button("📖 Importer le dictionnaire Android") { importUserDict() })
+        root.addView(button("🗑️ Oublier tous les mots appris") {
+            prefs.forgetLearnedWords()
+            refreshMemory()
+            Toast.makeText(this, "Mémoire effacée", Toast.LENGTH_SHORT).show()
+        })
+
         // ----- Police -----
         root.addView(section("Police des touches"))
         root.addView(choiceRow(Fonts.names, prefs.fontIndex, 11f) {
@@ -532,7 +564,11 @@ class SettingsActivity : Activity() {
             }.start()
         })
 
-        root.addView(hint("Traduction : DeepL et Google sont optionnels (l'IA suffit)."))
+        root.addView(hint(
+            "⚠️ Aucune clé de traduction n'est nécessaire : si ta clé IA fonctionne, " +
+                    "la traduction marche déjà. Les deux champs ci-dessous sont facultatifs " +
+                    "(DeepL est gratuit jusqu'à 500 000 caractères par mois sur deepl.com/pro-api)."
+        ))
         root.addView(keyField("Clé DeepL (optionnelle)", prefs.deeplKey) { prefs.deeplKey = it })
         root.addView(keyField("Clé Google Traduction (optionnelle)", prefs.googleTranslateKey) {
             prefs.googleTranslateKey = it
