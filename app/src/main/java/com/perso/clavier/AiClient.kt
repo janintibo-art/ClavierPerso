@@ -82,7 +82,13 @@ object AiClient {
 
     /** Nettoie les preambules et guillemets que l'IA ajoute parfois. */
     fun cleanOutput(raw: String): String {
-        var r = raw.trim().trim('"', '«', '»', '\u201C', '\u201D').trim()
+        var r = raw.trim()
+        // Retire les blocs de code markdown (```bash … ```)
+        if (r.startsWith("```")) {
+            r = r.removePrefix("```").substringAfter('\n', "").substringBeforeLast("```").trim()
+        }
+        r = r.replace("```", "").trim()
+        r = r.trim('"', '«', '»', '\u201C', '\u201D').trim()
         val firstLine = r.substringBefore('\n')
         val low = firstLine.lowercase()
         if (firstLine.length <= 60 && firstLine.endsWith(":") &&

@@ -71,6 +71,38 @@ object AiModes {
             "Tu rédiges un message de vœux chaleureux et personnel selon l'occasion. $RULE"
         ),
         Mode(
+            "💻 Commande Termux", "Termux",
+            "Décris ce que tu veux faire : « créer un dépôt git »",
+            "Tu es un assistant Termux sur Android. L'utilisateur décrit ce qu'il veut faire, " +
+                    "tu réponds avec LA ou LES commandes à coller directement dans Termux, " +
+                    "une par ligne, dans l'ordre. Utilise pkg pour installer les paquets. " +
+                    "Aucune explication, aucun commentaire, aucun bloc de code markdown, " +
+                    "aucun symbole $ en début de ligne. Uniquement les commandes."
+        ),
+        Mode(
+            "👨‍💻 Écrire du code", "Code",
+            "Décris le code voulu : « une fonction qui trie un tableau »",
+            "Tu es un assistant de programmation. Tu écris le code demandé, prêt à être collé. " +
+                    "Réponds UNIQUEMENT avec le code, sans bloc markdown, sans explication " +
+                    "avant ou après. Ajoute seulement de courts commentaires dans le code " +
+                    "si c'est utile à la compréhension."
+        ),
+        Mode(
+            "🐞 Expliquer une erreur", "Erreur",
+            "Colle le message d'erreur reçu",
+            "L'utilisateur colle une erreur (Termux, Gradle, Git, Android, Python…). " +
+                    "Tu expliques en une ou deux phrases simples ce qui ne va pas, " +
+                    "puis tu donnes la ou les commandes exactes pour corriger, une par ligne. " +
+                    "Pas de bloc markdown, pas de longue théorie."
+        ),
+        Mode(
+            "🌿 Commande Git", "Git",
+            "Ce que tu veux faire : « annuler mon dernier commit »",
+            "Tu réponds avec la ou les commandes git exactes pour réaliser ce que " +
+                    "l'utilisateur décrit, une par ligne, sans explication, sans bloc markdown, " +
+                    "sans symbole $ en début de ligne."
+        ),
+        Mode(
             "😂 Blague / réplique drôle", "Drôle",
             "Le sujet de la blague",
             "Tu écris une blague ou une réplique drôle et courte sur le sujet donné. $RULE"
