@@ -32,6 +32,7 @@ class SettingsActivity : Activity() {
         const val PICK_TEXT_FILE = 44
         const val REQ_CONTACTS = 51
         const val REQ_SMS = 52
+        const val PICK_CHAT = 45
     }
 
     private lateinit var prefs: Prefs
@@ -463,6 +464,7 @@ class SettingsActivity : Activity() {
         root.addView(hint("Plutôt que d'attendre des semaines, donne-lui directement ton vocabulaire :"))
         root.addView(button("💬 Apprendre de mes SMS envoyés") { importSms() })
         root.addView(button("👥 Apprendre les noms de mes contacts") { importContacts() })
+        root.addView(button("📱 Importer une conversation exportée") { importChatFile() })
         root.addView(button("📝 Coller un texte que j'ai écrit") { importTextDialog() })
         root.addView(button("📖 Importer le dictionnaire Android") { importUserDict() })
         root.addView(button("🗑️ Oublier tous les mots appris") {
@@ -490,17 +492,21 @@ class SettingsActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_CHAT && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                handleChatText(text)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Impossible de lire le fichier", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (requestCode == PICK_TEXT_FILE && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             try {
                 val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
-                if (text.length < 20) {
-                    Toast.makeText(this, "Fichier vide ou trop court", Toast.LENGTH_SHORT).show()
-                } else {
-                    runImport("ce fichier") {
-                        VocabularyImporter.learnFromText(this, text, 2, "ton fichier")
-                    }
-                }
+                handleChatText(text)
             } catch (e: Exception) {
                 Toast.makeText(this, "Impossible de lire le fichier", Toast.LENGTH_SHORT).show()
             }
@@ -800,6 +806,67 @@ class SettingsActivity : Activity() {
         runImport("le dictionnaire Android") { VocabularyImporter.importUserDictionary(this) }
     }
 
+    private fun importChatFile() {
+        AlertDialog.Builder(this)
+            .setTitle("Importer une conversation")
+            .setMessage(
+                "Dans WhatsApp : ouvre une discussion → ⋮ → Plus → Exporter la discussion → " +
+                        "Sans les médias → enregistre le fichier.\n\n" +
+                        "Le clavier te demandera ensuite quel nom est le tien, " +
+                        "et n'apprendra QUE tes propres messages."
+            )
+            .setPositiveButton("Choisir le fichier") { _, _ ->
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*" }
+                startActivityForResult(Intent.createChooser(intent, "Choisir l'export"), PICK_CHAT)
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    /** Analyse le texte, demande qui est l'utilisateur, puis apprend ses messages. */
+    private fun handleChatText(text: String) {
+        if (text.length < 40) {
+            Toast.makeText(this, "Fichier vide ou trop court", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val parsed = ChatLogImporter.parse(text)
+        if (!ChatLogImporter.isChatExport(parsed)) {
+            // Pas un export de conversation : on apprend tout le texte
+            runImport("ce fichier") {
+                VocabularyImporter.learnFromText(this, text, 2, "ton fichier")
+            }
+            return
+        }
+        val senders = ChatLogImporter.senders(parsed)
+        if (senders.isEmpty()) {
+            runImport("ce fichier") {
+                VocabularyImporter.learnFromText(this, text, 2, "ton fichier")
+            }
+            return
+        }
+        val labels = senders.map { it.first + "  (" + it.second + " messages)" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Lequel est toi ?")
+            .setItems(labels) { _, which ->
+                val me = senders[which].first
+                val mine = parsed.bySender[me]?.toString() ?: ""
+                if (mine.length < 20) {
+                    Toast.makeText(this, "Pas assez de texte pour ce nom", Toast.LENGTH_SHORT).show()
+                    return@setItems
+                }
+                runImport("tes messages") {
+                    VocabularyImporter.learnFromText(this, mine, 3, "tes messages de « " + me + " »")
+                }
+            }
+            .setNeutralButton("Tout apprendre") { _, _ ->
+                runImport("ce fichier") {
+                    VocabularyImporter.learnFromText(this, text, 2, "toute la conversation")
+                }
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
     private fun importTextDialog() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -826,9 +893,7 @@ class SettingsActivity : Activity() {
                 if (text.length < 20) {
                     Toast.makeText(this, "Texte trop court", Toast.LENGTH_SHORT).show()
                 } else {
-                    runImport("ce texte") {
-                        VocabularyImporter.learnFromText(this, text, 2, "ton texte")
-                    }
+                    handleChatText(text)
                 }
             }
             .setNeutralButton("Depuis un fichier") { _, _ ->
