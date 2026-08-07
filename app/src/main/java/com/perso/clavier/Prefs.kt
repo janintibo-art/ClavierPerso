@@ -303,7 +303,7 @@ class Prefs(context: Context) {
             val count = obj.optInt(w, 0) + 1
             obj.put(w, count)
             // Elagage : on retire les mots vus une seule fois quand c'est trop gros
-            if (obj.length() > 1200) {
+            if (obj.length() > 5000) {
                 val rares = obj.keys().asSequence().filter { obj.optInt(it, 0) <= 1 }.toList()
                 rares.take(400).forEach { obj.remove(it) }
             }
@@ -330,6 +330,60 @@ class Prefs(context: Context) {
             invalidateCaches()
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * Apprentissage en masse : fusionne d'un coup des milliers de mots.
+     * Un seul acces disque au lieu d'un par mot (indispensable pour l'import).
+     */
+    fun learnBulk(counts: Map<String, Int>, bigrams: Map<String, Map<String, Int>>) {
+        if (counts.isEmpty() && bigrams.isEmpty()) return
+        try {
+            val freq = JSONObject(sp.getString("freq", "{}") ?: "{}")
+            for ((w, c) in counts) {
+                if (w.length < 2 || w.length > 30) continue
+                freq.put(w, freq.optInt(w, 0) + c)
+            }
+            // Elagage si la memoire devient trop grosse : on garde les plus utilises
+            if (freq.length() > 5000) {
+                val all = freq.keys().asSequence().map { it to freq.optInt(it, 0) }.toList()
+                val keep = all.sortedByDescending { it.second }.take(4000).map { it.first }.toHashSet()
+                all.forEach { if (it.first !in keep) freq.remove(it.first) }
+            }
+
+            val big = JSONObject(sp.getString("bigrams", "{}") ?: "{}")
+            for ((prev, nexts) in bigrams) {
+                if (prev.length < 2) continue
+                val obj = big.optJSONObject(prev) ?: JSONObject()
+                for ((next, c) in nexts) {
+                    obj.put(next, obj.optInt(next, 0) + c)
+                }
+                // Au maximum 6 suites memorisees par mot
+                while (obj.length() > 6) {
+                    val worst = obj.keys().asSequence().minByOrNull { obj.optInt(it, 0) } ?: break
+                    obj.remove(worst)
+                }
+                big.put(prev, obj)
+            }
+            if (big.length() > 3000) {
+                val extra = big.keys().asSequence().toList().take(big.length() - 3000)
+                extra.forEach { big.remove(it) }
+            }
+
+            sp.edit()
+                .putString("freq", freq.toString())
+                .putString("bigrams", big.toString())
+                .apply()
+            invalidateCaches()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Nombre d'enchainements de mots memorises. */
+    fun bigramCount(): Int = try {
+        JSONObject(sp.getString("bigrams", "{}") ?: "{}").length()
+    } catch (e: Exception) {
+        0
     }
 
     /** Mots qui suivent souvent [previous], du plus frequent au moins frequent. */

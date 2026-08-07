@@ -5,6 +5,8 @@ Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 ## Écriture
 - Suggestions de mots **avec correcteur d'orthographe** (dictionnaire de 11 000 mots)
 - **Clavier intelligent** : il compte les mots que tu écris et te les propose dès la 1re ou 2e lettre
+- **Amorçage du vocabulaire** : apprend d'un coup depuis tes SMS envoyés, tes contacts, un texte collé ou le dictionnaire Android
+- **Correction automatique** sur espace (annulable d'un retour arrière), majuscule auto, double espace = point
 - **Prédiction du mot suivant** : après un mot, il propose ce que tu écris habituellement ensuite
 - Rangée de chiffres au-dessus des lettres (option)
 - Accents par appui long (é, à, ù, ç, ñ…)

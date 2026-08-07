@@ -28,6 +28,10 @@ class SettingsActivity : Activity() {
 
     companion object {
         const val PICK_IMAGE = 42
+        const val PICK_SHORTCUTS = 43
+        const val PICK_TEXT_FILE = 44
+        const val REQ_CONTACTS = 51
+        const val REQ_SMS = 52
     }
 
     private lateinit var prefs: Prefs
@@ -35,6 +39,7 @@ class SettingsActivity : Activity() {
     private lateinit var colorsContainer: LinearLayout
     private lateinit var shortcutsContainer: LinearLayout
     private var keyEditMode = false
+    private var memoryRefresher: (() -> Unit)? = null
     private lateinit var preview: KeyboardView
     private lateinit var testField: EditText
 
@@ -413,6 +418,8 @@ class SettingsActivity : Activity() {
         root.addView(shortcutsContainer)
         buildShortcuts()
         root.addView(button("+ Ajouter un raccourci") { addShortcutDialog() })
+        root.addView(button("📥 Importer mes raccourcis Samsung") { importDialog() })
+        root.addView(button("📤 Exporter mes raccourcis") { exportDialog() })
 
         root.addView(section("Astuces du clavier"))
         root.addView(hint("- Glisse ton doigt sur la barre Espace pour deplacer le curseur\n- Appui long sur 📋 : historique du presse-papiers (epingle tes favoris avec 📌)\n- Appui long sur ⏎ : reformulation IA du message (poli, pro, drole...)\n- Tape un calcul puis = : le resultat s'ecrit tout seul (ex : 12*45=540)"))
@@ -445,12 +452,19 @@ class SettingsActivity : Activity() {
             val top = counts.entries.sortedByDescending { it.value }.take(8)
                 .joinToString(", ") { it.key + " (" + it.value + ")" }
             memoryInfo.text = if (counts.isEmpty())
-                "Le clavier n'a encore rien appris. Écris normalement : tes mots seront proposés dès la 1re ou 2e lettre."
+                "Le clavier n'a encore rien appris. Utilise un bouton ci-dessous pour lui donner ton vocabulaire d'un coup."
             else
-                counts.size.toString() + " mots appris.\nTes plus utilisés : " + top
+                counts.size.toString() + " mots appris, " + prefs.bigramCount() +
+                        " enchaînements.\nTes plus utilisés : " + top
+            memoryRefresher = { refreshMemory() }
         }
         refreshMemory()
         root.addView(memoryInfo)
+        root.addView(hint("Plutôt que d'attendre des semaines, donne-lui directement ton vocabulaire :"))
+        root.addView(button("💬 Apprendre de mes SMS envoyés") { importSms() })
+        root.addView(button("👥 Apprendre les noms de mes contacts") { importContacts() })
+        root.addView(button("📝 Coller un texte que j'ai écrit") { importTextDialog() })
+        root.addView(button("📖 Importer le dictionnaire Android") { importUserDict() })
         root.addView(button("🗑️ Oublier tous les mots appris") {
             prefs.forgetLearnedWords()
             refreshMemory()
@@ -476,6 +490,32 @@ class SettingsActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_TEXT_FILE && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                if (text.length < 20) {
+                    Toast.makeText(this, "Fichier vide ou trop court", Toast.LENGTH_SHORT).show()
+                } else {
+                    runImport("ce fichier") {
+                        VocabularyImporter.learnFromText(this, text, 2, "ton fichier")
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "Impossible de lire le fichier", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        if (requestCode == PICK_SHORTCUTS && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                applyImport(ShortcutImporter.parse(text))
+            } catch (e: Exception) {
+                Toast.makeText(this, "Impossible de lire le fichier", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (requestCode == PICK_IMAGE && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             try {
@@ -702,6 +742,233 @@ class SettingsActivity : Activity() {
             })
             shortcutsContainer.addView(row)
         }
+    }
+
+    // ---------- Amorcage du vocabulaire ----------
+
+    private fun runImport(label: String, work: () -> VocabularyImporter.Report) {
+        Toast.makeText(this, "Analyse en cours…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val report = try {
+                work()
+            } catch (e: Exception) {
+                null
+            }
+            runOnUiThread {
+                if (report == null || report.words == 0) {
+                    Toast.makeText(this, "Rien trouvé dans " + label, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "✅ " + report.toString(), Toast.LENGTH_LONG).show()
+                }
+                memoryRefresher?.invoke()
+            }
+        }.start()
+    }
+
+    private fun hasPermission(perm: String): Boolean =
+        checkSelfPermission(perm) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun importSms() {
+        if (!hasPermission(android.Manifest.permission.READ_SMS)) {
+            AlertDialog.Builder(this)
+                .setTitle("Apprendre de tes messages")
+                .setMessage(
+                    "Le clavier va lire tes SMS ENVOYÉS pour apprendre ta façon d'écrire : " +
+                            "tes mots, tes expressions, tes tournures.\n\n" +
+                            "Rien n'est envoyé sur internet, tout reste sur ton téléphone. " +
+                            "Les messages ne sont pas conservés, seuls les mots sont comptés."
+                )
+                .setPositiveButton("Autoriser") { _, _ ->
+                    requestPermissions(arrayOf(android.Manifest.permission.READ_SMS), REQ_SMS)
+                }
+                .setNegativeButton("Annuler", null)
+                .show()
+            return
+        }
+        runImport("tes messages") { VocabularyImporter.importSentMessages(this) }
+    }
+
+    private fun importContacts() {
+        if (!hasPermission(android.Manifest.permission.READ_CONTACTS)) {
+            requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), REQ_CONTACTS)
+            return
+        }
+        runImport("tes contacts") { VocabularyImporter.importContacts(this) }
+    }
+
+    private fun importUserDict() {
+        runImport("le dictionnaire Android") { VocabularyImporter.importUserDictionary(this) }
+    }
+
+    private fun importTextDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+        }
+        layout.addView(TextView(this).apply {
+            text = "Colle ici un texte que tu as écrit : une conversation WhatsApp, " +
+                    "des notes, des mails… Plus le texte est long, mieux le clavier te connaîtra."
+            textSize = 13f
+            setTextColor(Color.parseColor("#5F6368"))
+        })
+        val field = EditText(this).apply {
+            hint = "Colle ton texte ici…"
+            minLines = 5
+            gravity = Gravity.TOP
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        layout.addView(field)
+        AlertDialog.Builder(this)
+            .setTitle("Apprendre d'un texte")
+            .setView(ScrollView(this).apply { addView(layout) })
+            .setPositiveButton("Apprendre") { _, _ ->
+                val text = field.text.toString()
+                if (text.length < 20) {
+                    Toast.makeText(this, "Texte trop court", Toast.LENGTH_SHORT).show()
+                } else {
+                    runImport("ce texte") {
+                        VocabularyImporter.learnFromText(this, text, 2, "ton texte")
+                    }
+                }
+            }
+            .setNeutralButton("Depuis un fichier") { _, _ ->
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "text/*" }
+                startActivityForResult(Intent.createChooser(intent, "Choisir un fichier texte"), PICK_TEXT_FILE)
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            Toast.makeText(this, "Autorisation refusée", Toast.LENGTH_SHORT).show()
+            return
+        }
+        when (requestCode) {
+            REQ_SMS -> runImport("tes messages") { VocabularyImporter.importSentMessages(this) }
+            REQ_CONTACTS -> runImport("tes contacts") { VocabularyImporter.importContacts(this) }
+        }
+    }
+
+    private fun applyImport(pairs: List<ShortcutImporter.Pair2>) {
+        if (pairs.isEmpty()) {
+            Toast.makeText(this, "Aucun raccourci reconnu dans ce texte", Toast.LENGTH_LONG).show()
+            return
+        }
+        val preview = pairs.take(6).joinToString("\n") { it.key + "  →  " + it.value }
+        val more = if (pairs.size > 6) "\n… et " + (pairs.size - 6) + " autres" else ""
+        AlertDialog.Builder(this)
+            .setTitle(pairs.size.toString() + " raccourcis trouvés")
+            .setMessage(preview + more)
+            .setPositiveButton("Tout importer") { _, _ ->
+                val n = ShortcutImporter.save(this, pairs)
+                buildShortcuts()
+                Toast.makeText(this, n.toString() + " raccourcis importés ✅", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun importDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+        }
+        layout.addView(TextView(this).apply {
+            text = "Ouvre les raccourcis du clavier Samsung, sélectionne la liste et copie-la, " +
+                    "puis colle-la ici. Formats acceptés : « slt = Salut », « slt : Salut », " +
+                    "« slt → Salut », ou une ligne sur deux."
+            textSize = 13f
+            setTextColor(Color.parseColor("#5F6368"))
+        })
+        val field = EditText(this).apply {
+            hint = "Colle ici tes raccourcis…"
+            minLines = 5
+            gravity = Gravity.TOP
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        layout.addView(field)
+
+        val scroll = ScrollView(this).apply { addView(layout) }
+
+        AlertDialog.Builder(this)
+            .setTitle("Importer des raccourcis")
+            .setView(scroll)
+            .setPositiveButton("Analyser") { _, _ ->
+                applyImport(ShortcutImporter.parse(field.text.toString()))
+            }
+            .setNeutralButton("Depuis un fichier") { _, _ ->
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("text/plain", "text/csv", "application/json"))
+                }
+                startActivityForResult(Intent.createChooser(intent, "Choisir un fichier"), PICK_SHORTCUTS)
+            }
+            .setNegativeButton("Ouvrir réglages Samsung") { _, _ -> openSamsungSettings() }
+            .show()
+
+        // Tentative de lecture directe (fonctionne uniquement sur téléphone rooté)
+        val auto = ShortcutImporter.tryReadSamsung()
+        if (auto.isNotEmpty()) applyImport(auto)
+    }
+
+    private fun openSamsungSettings() {
+        val candidates = listOf(
+            "com.samsung.android.honeyboard" to "com.samsung.android.honeyboard.settings.SettingsActivity",
+            "com.sec.android.inputmethod" to "com.sec.android.inputmethod.implement.setting.SettingsActivity"
+        )
+        for ((pkg, cls) in candidates) {
+            try {
+                startActivity(Intent().apply {
+                    setClassName(pkg, cls)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                return
+            } catch (_: Exception) {
+            }
+        }
+        try {
+            val launch = packageManager.getLaunchIntentForPackage("com.samsung.android.honeyboard")
+            if (launch != null) {
+                startActivity(launch)
+                return
+            }
+        } catch (_: Exception) {
+        }
+        startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+        Toast.makeText(
+            this,
+            "Clavier Samsung → Saisie intelligente → Raccourcis de texte",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun exportDialog() {
+        val text = ShortcutImporter.export(this)
+        if (text.isBlank()) {
+            Toast.makeText(this, "Aucun raccourci à exporter", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val field = EditText(this).apply {
+            setText(text)
+            minLines = 5
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Mes raccourcis")
+            .setView(ScrollView(this).apply { addView(field) })
+            .setPositiveButton("Copier") { _, _ ->
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Raccourcis", text))
+                Toast.makeText(this, "Copié dans le presse-papiers", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Fermer", null)
+            .show()
     }
 
     private fun addShortcutDialog() {
