@@ -435,15 +435,25 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             canvas.drawLine(dp(10f), toolsH, width - dp(10f), toolsH, linePaint)
             val tm = translateMode
             val am = aiMode
+            // Le bandeau lance l'action ; le ✕ a droite quitte le mode.
+            val exitW = dp(52f)
             if (tm != null) {
                 topItem(
-                    Key("➜ Traduire en $tm", CODE_TRANSLATE),
-                    RectF(0f, toolsH, width.toFloat(), toolsH + sugH), sp(15f), active = true
+                    Key("➜ Traduire en $tm", CODE_ENTER),
+                    RectF(0f, toolsH, width - exitW, toolsH + sugH), sp(15f), active = true
+                )
+                topItem(
+                    Key("✕", CODE_TRANSLATE),
+                    RectF(width - exitW, toolsH, width.toFloat(), toolsH + sugH), sp(16f)
                 )
             } else if (am != null) {
                 topItem(
-                    Key("🤖 $am — écris puis ➜", CODE_AI),
-                    RectF(0f, toolsH, width.toFloat(), toolsH + sugH), sp(15f), active = true
+                    Key("➜ $am", CODE_ENTER),
+                    RectF(0f, toolsH, width - exitW, toolsH + sugH), sp(15f), active = true
+                )
+                topItem(
+                    Key("✕", CODE_AI),
+                    RectF(width - exitW, toolsH, width.toFloat(), toolsH + sugH), sp(16f)
                 )
             } else {
                 val sugW = width / 3f
