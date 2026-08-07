@@ -11,7 +11,6 @@ import android.view.inputmethod.EditorInfo
 import android.view.KeyEvent
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
-import android.widget.FrameLayout
 import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
@@ -21,7 +20,7 @@ import kotlin.concurrent.thread
 
 class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
-    private var container: FrameLayout? = null
+    private var container: android.widget.LinearLayout? = null
     private var keyboardView: KeyboardView? = null
     private var panel: View? = null
     private var translateTarget: Pair<String, String>? = null
@@ -94,12 +93,14 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onCreateInputView(): View {
-        val frame = FrameLayout(this)
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+        }
         val kb = KeyboardView(this, this)
-        frame.addView(kb)
+        root.addView(kb)
         keyboardView = kb
-        container = frame
-        return frame
+        container = root
+        return root
     }
 
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
@@ -170,10 +171,15 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         else (300 * resources.displayMetrics.density).toInt()
     }
 
-    private fun showPanel(view: View) {
+    private fun showPanel(view: View, keepKeyboard: Boolean = false) {
         hidePanel()
-        keyboardView?.visibility = View.GONE
-        container?.addView(view)
+        if (keepKeyboard) {
+            // Le panneau se place au-dessus : le clavier reste utilisable
+            container?.addView(view, 0)
+        } else {
+            keyboardView?.visibility = View.GONE
+            container?.addView(view)
+        }
         panel = view
     }
 
@@ -206,10 +212,11 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         showPanel(
             GifPanel(
-                this, Prefs(this), panelHeight(),
+                this, prefs(), (panelHeight() * 0.95f).toInt(),
                 onCommit = { file -> commitGif(file) },
                 onBack = { hidePanel() }
-            )
+            ),
+            keepKeyboard = true
         )
     }
 
@@ -716,6 +723,11 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     // ---------- Callbacks du clavier ----------
 
     override fun onText(text: String) {
+        // Le panneau GIF est ouvert : la frappe alimente la recherche
+        (panel as? GifPanel)?.let { gif ->
+            if (text == " ") gif.runSearch() else gif.appendQuery(text)
+            return
+        }
         val ic = currentInputConnection ?: return
         val p = prefs()
 
@@ -807,6 +819,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onDelete() {
+        (panel as? GifPanel)?.let {
+            it.deleteQuery()
+            return
+        }
         val ic = currentInputConnection ?: return
 
         // Retour arriere juste apres une generation IA : on remet la demande d'origine
@@ -858,6 +874,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onEnter() {
+        (panel as? GifPanel)?.let {
+            it.runSearch()
+            return
+        }
         if (aiMode != null) {
             runAi()
             return
