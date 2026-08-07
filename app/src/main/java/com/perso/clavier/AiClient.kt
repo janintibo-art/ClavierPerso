@@ -55,6 +55,45 @@ object AiClient {
         }
     }
 
+    /**
+     * Genere un texte : utilise la cle si elle existe, sinon un service public gratuit.
+     * Renvoie null si tout echoue.
+     */
+    fun generate(prefs: Prefs, system: String, user: String): String? {
+        ask(prefs, system, user)?.let { return it }
+        return try {
+            val prompt = system + "\n\n" + user
+            val url = "https://text.pollinations.ai/" +
+                    java.net.URLEncoder.encode(prompt, "UTF-8").replace("+", "%20")
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 35000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
+            }
+            val code = conn.responseCode
+            val out = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() } ?: ""
+            conn.disconnect()
+            if (code !in 200..299) null else out.trim().ifEmpty { null }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Nettoie les preambules et guillemets que l'IA ajoute parfois. */
+    fun cleanOutput(raw: String): String {
+        var r = raw.trim().trim('"', '«', '»', '\u201C', '\u201D').trim()
+        val firstLine = r.substringBefore('\n')
+        val low = firstLine.lowercase()
+        if (firstLine.length <= 60 && firstLine.endsWith(":") &&
+            (low.contains("voici") || low.contains("réponse") || low.contains("resultat") ||
+                    low.contains("résultat") || low.contains("requête") || low.contains("suggestion"))
+        ) {
+            r = r.substringAfter('\n').trim()
+        }
+        return r.trim().trim('"').trim()
+    }
+
     /** Message d'erreur lisible pour le bouton « Tester ». */
     fun test(prefs: Prefs): String {
         if (prefs.aiKey.isBlank()) return "Aucune clé IA renseignée"

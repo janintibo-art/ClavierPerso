@@ -37,6 +37,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onGifToggle()
         fun onTranslateToggle()
         fun onFixSpelling()
+        fun onAiToggle()
         fun onMoveCursor(delta: Int)
         fun onClipboardPanel()
         fun onRewrite()
@@ -56,6 +57,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_GIF = -10
         const val CODE_TRANSLATE = -14
         const val CODE_FIX = -15
+        const val CODE_AI = -16
         // Les suggestions occupent une plage FERMEE : -11, -12, -13.
         // Tout nouveau code doit rester en dehors de cette plage.
         const val CODE_SUG = -11
@@ -74,6 +76,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var bgBitmap: Bitmap? = null
 
     var translateMode: String? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Nom court du mode IA actif, ou null. */
+    var aiMode: String? = null
         set(value) {
             field = value
             invalidate()
@@ -293,7 +302,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun toolsHeight() = dp(40f)
-    private fun sugHeight() = if (prefs.suggestionsEnabled || translateMode != null) dp(42f) else 0f
+    private fun sugHeight() =
+        if (prefs.suggestionsEnabled || translateMode != null || aiMode != null) dp(42f) else 0f
     private fun barHeight() = toolsHeight() + sugHeight()
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -303,7 +313,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun displayLabel(key: Key): String {
-        if (key.code == CODE_ENTER && translateMode != null) return "➜"
+        if (key.code == CODE_ENTER && (translateMode != null || aiMode != null)) return "➜"
         if (key.code == CODE_SHIFT) return if (caps) "⇪" else "⇧"
         if (key.code >= 0 && !symbols && (shift || caps)) return key.label.uppercase()
         return key.label
@@ -386,6 +396,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             Key("GIF", CODE_GIF),
             Key("📋", CODE_PASTE),
             Key("✅", CODE_FIX),
+            Key("🤖", CODE_AI),
             Key("🌍", CODE_TRANSLATE),
             Key("⚙️", CODE_SETTINGS)
         )
@@ -393,7 +404,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         tools.forEachIndexed { i, key ->
             val r = RectF(toolW * i, 0f, toolW * (i + 1), toolsH)
             val size = if (key.label == "GIF") sp(14f) else sp(18f)
-            topItem(key, r, size, active = key.code == CODE_TRANSLATE && translateMode != null)
+            val on = (key.code == CODE_TRANSLATE && translateMode != null) ||
+                    (key.code == CODE_AI && aiMode != null)
+            topItem(key, r, size, active = on)
         }
 
         linePaint.color = (0x28 shl 24) or (prefs.colorText and 0xFFFFFF)
@@ -403,9 +416,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         if (sugH > 0f) {
             canvas.drawLine(dp(10f), toolsH, width - dp(10f), toolsH, linePaint)
             val tm = translateMode
+            val am = aiMode
             if (tm != null) {
                 topItem(
                     Key("➜ Traduire en $tm", CODE_TRANSLATE),
+                    RectF(0f, toolsH, width.toFloat(), toolsH + sugH), sp(15f), active = true
+                )
+            } else if (am != null) {
+                topItem(
+                    Key("🤖 $am — écris puis ➜", CODE_AI),
                     RectF(0f, toolsH, width.toFloat(), toolsH + sugH), sp(15f), active = true
                 )
             } else {
@@ -794,6 +813,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             key.code == CODE_GIF -> listener.onGifToggle()
             key.code == CODE_TRANSLATE -> listener.onTranslateToggle()
             key.code == CODE_FIX -> listener.onFixSpelling()
+            key.code == CODE_AI -> listener.onAiToggle()
             else -> {
                 var t = key.label
                 if (!symbols && (shift || caps)) t = t.uppercase()

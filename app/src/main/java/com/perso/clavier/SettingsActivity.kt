@@ -105,6 +105,10 @@ class SettingsActivity : Activity() {
             Toast.makeText(this@SettingsActivity, "La correction IA fonctionne dans le vrai clavier", Toast.LENGTH_SHORT).show()
         }
 
+        override fun onAiToggle() {
+            Toast.makeText(this@SettingsActivity, "L'assistant IA s'utilise dans le vrai clavier (🤖)", Toast.LENGTH_SHORT).show()
+        }
+
         override fun onLangSwitch() {
             prefs.langIndex = (prefs.langIndex + 1) % Layouts.languages.size
             preview.refresh()
@@ -438,6 +442,11 @@ class SettingsActivity : Activity() {
         root.addView(keyField("Clé IA (sk-…)", prefs.aiKey) { prefs.aiKey = it })
         root.addView(keyField("URL de l'API IA", prefs.aiBaseUrl) { prefs.aiBaseUrl = it })
         root.addView(keyField("Modèle IA", prefs.aiModel) { prefs.aiModel = it })
+        root.addView(hint(
+            "Assistant 🤖 : touche 🤖 → choisis un mode (recherche Google, mot d'excuse, " +
+                    "email pro, résumé, idées…), écris ta demande, appuie sur ➜. " +
+                    "Le résultat remplace ta demande, prêt à envoyer. ⌫ annule."
+        ))
         root.addView(button("🧪 Tester la clé IA") {
             Thread {
                 val r = AiClient.test(Prefs(this))

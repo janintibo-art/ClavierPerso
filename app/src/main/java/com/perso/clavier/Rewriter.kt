@@ -1,9 +1,5 @@
 package com.perso.clavier
 
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-
 object Rewriter {
 
     /** Consigne utilisee par le bouton « corriger » de la barre d'outils. */
@@ -26,39 +22,14 @@ object Rewriter {
     fun rewrite(prefs: Prefs, text: String, instruction: String): String? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
-
-        // 1. IA personnelle si une cle est configuree : bien plus fiable
-        if (AiClient.isConfigured(prefs)) {
-            val out = AiClient.ask(
-                prefs,
-                "Tu réécris des messages. Réponds UNIQUEMENT avec le message réécrit, " +
-                        "sans guillemets, sans explication, sans préambule. " +
-                        "Garde la langue d'origine du message.",
-                "Réécris ce message " + instruction + " :\n\n" + trimmed
-            )
-            if (!out.isNullOrBlank()) return clean(out, trimmed)
-        }
-
-        // 2. Service public gratuit en secours
-        return try {
-            val prompt = "Réécris le message suivant " + instruction + ". " +
-                    "Garde la même langue. Réponds UNIQUEMENT avec le message réécrit, " +
-                    "sans guillemets ni explication.\n\nMessage : " + trimmed
-            val url = "https://text.pollinations.ai/" +
-                    URLEncoder.encode(prompt, "UTF-8").replace("+", "%20")
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 10000
-                readTimeout = 30000
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
-            }
-            val code = conn.responseCode
-            val out = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                ?.bufferedReader()?.use { it.readText() } ?: ""
-            conn.disconnect()
-            if (code !in 200..299 || out.isBlank()) null else clean(out, trimmed)
-        } catch (e: Exception) {
-            null
-        }
+        val out = AiClient.generate(
+            prefs,
+            "Tu réécris des messages. Réponds UNIQUEMENT avec le message réécrit, " +
+                    "sans guillemets, sans explication, sans préambule. " +
+                    "Garde la langue d'origine du message.",
+            "Réécris ce message " + instruction + " :\n\n" + trimmed
+        ) ?: return null
+        return clean(out, trimmed)
     }
 
     /** Retire les guillemets ou preambules que l'IA ajoute parfois. */

@@ -25,6 +25,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     private var keyboardView: KeyboardView? = null
     private var panel: View? = null
     private var translateTarget: Pair<String, String>? = null
+    private var aiMode: AiModes.Mode? = null
+    private var aiUndo: Pair<String, String>? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
@@ -126,6 +128,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         captureClip()
         keyboardView?.refresh()
         keyboardView?.translateMode = translateTarget?.second
+        keyboardView?.aiMode = aiMode?.short
         keyboardView?.autoShift()
         updateSuggestions()
     }
@@ -292,6 +295,77 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         )
     }
 
+    override fun onAiToggle() {
+        if (aiMode != null) {
+            aiMode = null
+            keyboardView?.aiMode = null
+            Toast.makeText(this, "Mode IA désactivé", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (panel is AiPanel) {
+            hidePanel()
+            return
+        }
+        showPanel(
+            AiPanel(
+                this, prefs(), panelHeight(),
+                onPick = { mode ->
+                    aiMode = mode
+                    keyboardView?.aiMode = mode.short
+                    hidePanel()
+                    Toast.makeText(
+                        this,
+                        "🤖 " + mode.label + " : " + mode.hint + ", puis ➜",
+                        Toast.LENGTH_LONG
+                    ).show()
+                },
+                onBack = { hidePanel() }
+            )
+        )
+    }
+
+    /** Envoie la demande a l'IA et remplace le texte par la reponse. */
+    private fun runAi() {
+        val ic = currentInputConnection ?: return
+        val mode = aiMode ?: return
+        val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
+        val request = (before + after).trim()
+        if (request.length < 3) {
+            Toast.makeText(this, "Écris d'abord ta demande", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "🤖 " + mode.short + "…", Toast.LENGTH_SHORT).show()
+        thread {
+            val raw = AiClient.generate(prefs(), mode.system, request)
+            mainHandler.post {
+                if (raw == null) {
+                    Toast.makeText(
+                        this,
+                        "Échec de l'IA. Ajoute une clé IA dans les réglages du clavier.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@post
+                }
+                val result = AiClient.cleanOutput(raw)
+                if (result.isBlank()) {
+                    Toast.makeText(this, "Réponse vide, réessaie", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+                val c = currentInputConnection ?: return@post
+                c.beginBatchEdit()
+                c.deleteSurroundingText(before.length, after.length)
+                c.commitText(result, 1)
+                c.endBatchEdit()
+                // Un retour arriere juste apres restaure la demande d'origine
+                aiUndo = request to result
+                resync()
+                updateSuggestions()
+                Toast.makeText(this, "Prêt à envoyer (⌫ pour annuler)", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     override fun onFixSpelling() {
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
@@ -453,6 +527,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             ic.commitText(text, 1)
             composing.append(text)
             lastAutoCorrect = null
+            aiUndo = null
             updateSuggestions()
             return
         }
@@ -521,6 +596,24 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onDelete() {
         val ic = currentInputConnection ?: return
 
+        // Retour arriere juste apres une generation IA : on remet la demande d'origine
+        val undo = aiUndo
+        if (undo != null) {
+            val (original, generated) = undo
+            aiUndo = null
+            val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+            if (before.endsWith(generated)) {
+                ic.beginBatchEdit()
+                ic.deleteSurroundingText(generated.length, 0)
+                ic.commitText(original, 1)
+                ic.endBatchEdit()
+                resync()
+                updateSuggestions()
+                Toast.makeText(this, "Demande restaurée", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+
         // Retour arriere juste apres une correction auto : on remet le mot d'origine
         val auto = lastAutoCorrect
         if (auto != null) {
@@ -552,6 +645,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onEnter() {
+        if (aiMode != null) {
+            runAi()
+            return
+        }
         if (translateTarget != null) {
             doTranslate()
             return
