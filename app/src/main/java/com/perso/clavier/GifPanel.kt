@@ -12,11 +12,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import kotlin.concurrent.thread
 
 class GifPanel(
@@ -88,86 +86,36 @@ class GifPanel(
 
     // ---------- Réseau ----------
 
-    private fun fetchText(url: String): String {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
-        return conn.inputStream.bufferedReader().readText().also { conn.disconnect() }
-    }
-
     private fun fetchBytes(url: String): ByteArray {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 10000
         conn.readTimeout = 15000
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
         return conn.inputStream.readBytes().also { conn.disconnect() }
     }
 
-    private fun apiUrls(q: String): List<String> {
-        val urls = mutableListOf<String>()
-        val key = prefs.tenorKey.trim()
-        val enc = URLEncoder.encode(q, "UTF-8")
-        if (key.isNotEmpty()) {
-            urls.add(
-                if (q.isEmpty())
-                    "https://tenor.googleapis.com/v2/featured?key=$key&limit=24&media_filter=tinygif,tinygifpreview"
-                else
-                    "https://tenor.googleapis.com/v2/search?q=$enc&key=$key&limit=24&media_filter=tinygif,tinygifpreview"
-            )
-        }
-        urls.add(
-            if (q.isEmpty())
-                "https://g.tenor.com/v1/trending?key=LIVDSRZULELA&limit=24"
-            else
-                "https://g.tenor.com/v1/search?q=$enc&key=LIVDSRZULELA&limit=24"
-        )
-        return urls
-    }
-
-    /** Retourne des paires (urlAperçu, urlGif). Gère les formats Tenor v1 et v2. */
-    private fun parse(json: String): List<Pair<String, String>> {
-        val out = mutableListOf<Pair<String, String>>()
-        val results = JSONObject(json).optJSONArray("results") ?: return out
-        for (i in 0 until results.length()) {
-            val obj = results.getJSONObject(i)
-            val mf = obj.optJSONObject("media_formats")
-            if (mf != null) { // v2
-                val tiny = mf.optJSONObject("tinygif") ?: continue
-                val gifUrl = tiny.optString("url")
-                if (gifUrl.isEmpty()) continue
-                val preview = mf.optJSONObject("tinygifpreview")?.optString("url")
-                    ?.takeIf { it.isNotEmpty() } ?: gifUrl
-                out.add(preview to gifUrl)
-            } else { // v1
-                val media = obj.optJSONArray("media") ?: continue
-                if (media.length() == 0) continue
-                val tiny = media.getJSONObject(0).optJSONObject("tinygif") ?: continue
-                val gifUrl = tiny.optString("url")
-                if (gifUrl.isEmpty()) continue
-                val preview = tiny.optString("preview").takeIf { it.isNotEmpty() } ?: gifUrl
-                out.add(preview to gifUrl)
-            }
-        }
-        return out
-    }
-
     private fun search(q: String) {
+        if (prefs.gifKey.isBlank()) {
+            status.text = "Ajoute une clé GIF gratuite dans les réglages du clavier " +
+                    "(section GIF). L'API Tenor a fermé le 30 juin 2026."
+            return
+        }
         status.text = "Chargement…"
         thread {
-            for (url in apiUrls(q)) {
-                try {
-                    val items = parse(fetchText(url))
-                    if (items.isNotEmpty()) {
-                        main.post {
-                            status.text = ""
-                            build(items)
-                        }
-                        return@thread
-                    }
-                } catch (_: Exception) {
-                }
+            val items = try {
+                GifProvider.search(prefs, q)
+            } catch (e: Exception) {
+                null
             }
             main.post {
-                status.text = "Impossible de charger les GIF. Vérifie ta connexion, ou ajoute une clé Tenor gratuite dans les réglages du clavier."
+                if (items == null) {
+                    status.text = "Connexion impossible. Vérifie ta clé dans les réglages."
+                } else if (items.isEmpty()) {
+                    status.text = "Aucun GIF trouvé"
+                } else {
+                    status.text = ""
+                    build(items.map { it.preview to it.gif })
+                }
             }
         }
     }

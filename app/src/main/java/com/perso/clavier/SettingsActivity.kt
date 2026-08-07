@@ -101,6 +101,10 @@ class SettingsActivity : Activity() {
             Toast.makeText(this@SettingsActivity, "La reformulation IA s'ouvre dans le vrai clavier (appui long sur ⏎)", Toast.LENGTH_SHORT).show()
         }
 
+        override fun onFixSpelling() {
+            Toast.makeText(this@SettingsActivity, "La correction IA fonctionne dans le vrai clavier", Toast.LENGTH_SHORT).show()
+        }
+
         override fun onLangSwitch() {
             prefs.langIndex = (prefs.langIndex + 1) % Layouts.languages.size
             preview.refresh()
@@ -425,52 +429,69 @@ class SettingsActivity : Activity() {
         root.addView(section("Astuces du clavier"))
         root.addView(hint("- Glisse ton doigt sur la barre Espace pour deplacer le curseur\n- Appui long sur 📋 : historique du presse-papiers (epingle tes favoris avec 📌)\n- Appui long sur ⏎ : reformulation IA du message (poli, pro, drole...)\n- Tape un calcul puis = : le resultat s'ecrit tout seul (ex : 12*45=540)"))
 
-        root.addView(section("GIF"))
-        root.addView(hint("La touche GIF du clavier utilise Tenor. Si la recherche ne fonctionne pas, colle ici une cle API Tenor gratuite (console.cloud.google.com, API Tenor)."))
-        root.addView(EditText(this).apply {
-            hint = "Cle API Tenor (optionnelle)"
-            setText(prefs.tenorKey)
-            background = rounded(Color.WHITE)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            maxLines = 1
-            addTextChangedListener(object : TextWatcher {
-                override fun afterTextChanged(sq: Editable?) {
-                    prefs.tenorKey = sq.toString().trim()
-                }
-                override fun beforeTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun onTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
-            })
+        // ----- Cles de services -----
+        root.addView(section("Clés IA et services 🔑"))
+        root.addView(hint(
+            "Une clé IA améliore énormément la traduction, la correction (✅) et la reformulation. " +
+                    "Compatible OpenAI, Groq, Mistral, DeepSeek, OpenRouter…"
+        ))
+        root.addView(keyField("Clé IA (sk-…)", prefs.aiKey) { prefs.aiKey = it })
+        root.addView(keyField("URL de l'API IA", prefs.aiBaseUrl) { prefs.aiBaseUrl = it })
+        root.addView(keyField("Modèle IA", prefs.aiModel) { prefs.aiModel = it })
+        root.addView(button("🧪 Tester la clé IA") {
+            Thread {
+                val r = AiClient.test(Prefs(this))
+                runOnUiThread { alert("Test IA", r) }
+            }.start()
         })
 
-        root.addView(section("Mémoire du clavier 🧠"))
-        val memoryInfo = TextView(this).apply {
-            textSize = 13f
-            setTextColor(Color.parseColor("#5F6368"))
-            setPadding(dp(4), dp(4), dp(4), dp(2))
+        root.addView(hint("Traduction : DeepL et Google sont optionnels (l'IA suffit)."))
+        root.addView(keyField("Clé DeepL (optionnelle)", prefs.deeplKey) { prefs.deeplKey = it })
+        root.addView(keyField("Clé Google Traduction (optionnelle)", prefs.googleTranslateKey) {
+            prefs.googleTranslateKey = it
+        })
+        root.addView(button("🧪 Tester la traduction") {
+            Thread {
+                val r = Translator.test(Prefs(this))
+                runOnUiThread { alert("Test traduction", r) }
+            }.start()
+        })
+
+        root.addView(section("GIF"))
+        root.addView(hint(
+            "L'API Tenor a été fermée par Google le 30 juin 2026. Choisis un fournisseur " +
+                    "et colle une clé gratuite : Giphy (developers.giphy.com) ou Klipy (klipy.com/developers)."
+        ))
+        val gifProviders = listOf("Giphy", "Klipy")
+        val gifRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        gifProviders.forEachIndexed { index, name ->
+            gifRow.addView(TextView(this).apply {
+                text = name
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                background = rounded(Color.parseColor(if (index == prefs.gifProvider) "#4A6CF7" else "#9AA0A6"))
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                if (index > 0) lp.leftMargin = dp(8)
+                layoutParams = lp
+                setOnClickListener {
+                    prefs.gifProvider = index
+                    for (i in 0 until gifRow.childCount) {
+                        (gifRow.getChildAt(i) as TextView).background =
+                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"))
+                    }
+                }
+            })
         }
-        fun refreshMemory() {
-            val counts = prefs.wordCounts()
-            val top = counts.entries.sortedByDescending { it.value }.take(8)
-                .joinToString(", ") { it.key + " (" + it.value + ")" }
-            memoryInfo.text = if (counts.isEmpty())
-                "Le clavier n'a encore rien appris. Utilise un bouton ci-dessous pour lui donner ton vocabulaire d'un coup."
-            else
-                counts.size.toString() + " mots appris, " + prefs.bigramCount() +
-                        " enchaînements.\nTes plus utilisés : " + top
-            memoryRefresher = { refreshMemory() }
-        }
-        refreshMemory()
-        root.addView(memoryInfo)
-        root.addView(hint("Plutôt que d'attendre des semaines, donne-lui directement ton vocabulaire :"))
-        root.addView(button("💬 Apprendre de mes SMS envoyés") { importSms() })
-        root.addView(button("👥 Apprendre les noms de mes contacts") { importContacts() })
-        root.addView(button("📱 Importer une conversation exportée") { importChatFile() })
-        root.addView(button("📝 Coller un texte que j'ai écrit") { importTextDialog() })
-        root.addView(button("📖 Importer le dictionnaire Android") { importUserDict() })
-        root.addView(button("🗑️ Oublier tous les mots appris") {
-            prefs.forgetLearnedWords()
-            refreshMemory()
-            Toast.makeText(this, "Mémoire effacée", Toast.LENGTH_SHORT).show()
+        root.addView(gifRow)
+        root.addView(keyField("Clé GIF", prefs.gifKey) { prefs.gifKey = it })
+        root.addView(button("🧪 Tester les GIF") {
+            Thread {
+                val r = GifProvider.test(Prefs(this))
+                runOnUiThread { alert("Test GIF", r) }
+            }.start()
         })
 
         root.addView(section("Hauteur des touches"))
@@ -540,6 +561,35 @@ class SettingsActivity : Activity() {
     }
 
     // ---------- Construction de l'interface ----------
+
+    private fun alert(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun keyField(label: String, value: String, onChange: (String) -> Unit): EditText =
+        EditText(this).apply {
+            hint = label
+            setText(value)
+            textSize = 14f
+            maxLines = 1
+            background = rounded(Color.WHITE)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            lp.topMargin = dp(8)
+            layoutParams = lp
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(sq: Editable?) { onChange(sq.toString().trim()) }
+                override fun beforeTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
+        }
 
     private fun section(text: String): TextView = TextView(this).apply {
         this.text = text

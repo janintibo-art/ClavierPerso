@@ -242,9 +242,37 @@ class Prefs(context: Context) {
         saveClips(clips().filter { it.second })
     }
 
-    var tenorKey: String
-        get() = sp.getString("tenor_key", "") ?: ""
-        set(v) { sp.edit().putString("tenor_key", v).apply() }
+    // ----- Cles de services -----
+
+    /** Cle IA (compatible OpenAI, Groq, Mistral, OpenRouter...). */
+    var aiKey: String
+        get() = sp.getString("ai_key", "") ?: ""
+        set(v) { sp.edit().putString("ai_key", v.trim()).apply() }
+
+    var aiBaseUrl: String
+        get() = sp.getString("ai_base", "https://api.openai.com/v1") ?: "https://api.openai.com/v1"
+        set(v) { sp.edit().putString("ai_base", v.trim()).apply() }
+
+    var aiModel: String
+        get() = sp.getString("ai_model", "gpt-4o-mini") ?: "gpt-4o-mini"
+        set(v) { sp.edit().putString("ai_model", v.trim()).apply() }
+
+    var deeplKey: String
+        get() = sp.getString("deepl_key", "") ?: ""
+        set(v) { sp.edit().putString("deepl_key", v.trim()).apply() }
+
+    var googleTranslateKey: String
+        get() = sp.getString("gtrans_key", "") ?: ""
+        set(v) { sp.edit().putString("gtrans_key", v.trim()).apply() }
+
+    /** 0 = Giphy, 1 = Klipy (Tenor a ferme le 30 juin 2026). */
+    var gifProvider: Int
+        get() = sp.getInt("gif_provider", 0)
+        set(v) { sp.edit().putInt("gif_provider", v).apply() }
+
+    var gifKey: String
+        get() = sp.getString("gif_key", "") ?: ""
+        set(v) { sp.edit().putString("gif_key", v.trim()).apply() }
 
     var keyPopup: Boolean
         get() = sp.getBoolean("key_popup", true)

@@ -224,10 +224,14 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         Toast.makeText(this, "Traduction…", Toast.LENGTH_SHORT).show()
         thread {
-            val result = Translator.translate(full, target.first, sourceLang())
+            val result = Translator.translate(prefs(), full, target.first, sourceLang())
             mainHandler.post {
                 if (result == null) {
-                    Toast.makeText(this, "Traduction impossible (connexion ?)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this,
+                        "Traduction impossible. Ajoute une clé IA ou DeepL dans les réglages.",
+                        Toast.LENGTH_LONG
+                    ).show()
                     return@post
                 }
                 val c = currentInputConnection ?: return@post
@@ -288,6 +292,18 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         )
     }
 
+    override fun onFixSpelling() {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
+        if ((before + after).trim().length < 3) {
+            Toast.makeText(this, "Écris d'abord ton message", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "✅ Correction en cours…", Toast.LENGTH_SHORT).show()
+        doRewrite(Rewriter.FIX_INSTRUCTION)
+    }
+
     private fun doRewrite(instruction: String) {
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
@@ -296,10 +312,14 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         if (full.isBlank()) return
         Toast.makeText(this, "✨ Reformulation…", Toast.LENGTH_SHORT).show()
         thread {
-            val result = Rewriter.rewrite(full, instruction)
+            val result = Rewriter.rewrite(prefs(), full, instruction)
             mainHandler.post {
                 if (result == null) {
-                    Toast.makeText(this, "Reformulation impossible (connexion ?)", Toast.LENGTH_SHORT).show()
+                    val hint = if (AiClient.isConfigured(prefs()))
+                        "Échec : vérifie ta clé IA dans les réglages"
+                    else
+                        "Échec : ajoute une clé IA dans les réglages pour un résultat fiable"
+                    Toast.makeText(this, hint, Toast.LENGTH_LONG).show()
                     return@post
                 }
                 val c = currentInputConnection ?: return@post
@@ -307,6 +327,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
                 c.deleteSurroundingText(before.length, after.length)
                 c.commitText(result, 1)
                 c.endBatchEdit()
+                resync()
                 updateSuggestions()
             }
         }

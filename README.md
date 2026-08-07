@@ -17,8 +17,9 @@ Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 
 ## Outils (barre du haut)
 - 😀 Émojis (8 catégories)
-- GIF avec recherche (Tenor)
+- GIF avec recherche (Giphy ou Klipy — l'API Tenor a fermé le 30/06/2026)
 - 📋 Coller — **appui long : historique du presse-papiers avec épinglage 📌**
+- ✅ **Correction IA** : corrige d'un appui toutes les fautes d'orthographe, grammaire, conjugaison et accents
 - 🌍 **Mode traduction** : choisis une langue, écris, appuie sur ➜, le message part traduit (16 langues)
 - ⏎ **appui long : reformulation IA** (plus poli, pro, drôle, court, romantique, correction)
 - ⚙️ Réglages
@@ -40,6 +41,12 @@ Clavier Android entièrement personnalisable (AZERTY / QWERTY), sans publicité.
 - Opacité des touches, hauteur, taille du texte
 - Bulle d'aperçu au-dessus de la touche, vibration, son
 - **Aperçu en direct** dans les réglages
+
+## Clés API (réglages → « Clés IA et services »)
+- **Clé IA** (OpenAI, Groq, Mistral, DeepSeek, OpenRouter…) : traduction, correction ✅ et reformulation
+- **DeepL / Google Traduction** : optionnelles
+- **Giphy ou Klipy** : nécessaire pour les GIF
+- Chaque section a un bouton **🧪 Tester** qui indique précisément ce qui fonctionne
 
 ## Compilation (GitHub Actions)
 À chaque `git push`, l'APK est compilé automatiquement :

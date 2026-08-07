@@ -36,6 +36,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onLangSwitch()
         fun onGifToggle()
         fun onTranslateToggle()
+        fun onFixSpelling()
         fun onMoveCursor(delta: Int)
         fun onClipboardPanel()
         fun onRewrite()
@@ -54,6 +55,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_LANG = -9
         const val CODE_GIF = -10
         const val CODE_TRANSLATE = -14
+        const val CODE_FIX = -15
         // Les suggestions occupent une plage FERMEE : -11, -12, -13.
         // Tout nouveau code doit rester en dehors de cette plage.
         const val CODE_SUG = -11
@@ -383,6 +385,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             Key("😀", CODE_EMOJI),
             Key("GIF", CODE_GIF),
             Key("📋", CODE_PASTE),
+            Key("✅", CODE_FIX),
             Key("🌍", CODE_TRANSLATE),
             Key("⚙️", CODE_SETTINGS)
         )
@@ -790,6 +793,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             key.code == CODE_LANG -> listener.onLangSwitch()
             key.code == CODE_GIF -> listener.onGifToggle()
             key.code == CODE_TRANSLATE -> listener.onTranslateToggle()
+            key.code == CODE_FIX -> listener.onFixSpelling()
             else -> {
                 var t = key.label
                 if (!symbols && (shift || caps)) t = t.uppercase()
