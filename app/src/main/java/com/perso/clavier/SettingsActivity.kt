@@ -581,7 +581,8 @@ class SettingsActivity : Activity() {
                 "Le clavier n'a encore rien appris. Utilise un bouton ci-dessous pour lui donner ton vocabulaire d'un coup."
             else
                 counts.size.toString() + " mots appris, " + prefs.bigramCount() +
-                        " enchaînements.\nTes plus utilisés : " + top
+                        " enchaînements, " + prefs.trigramCount() +
+                        " suites de 3 mots.\nTes plus utilisés : " + top
         }
         refreshMemory()
         memoryRefresher = { refreshMemory() }

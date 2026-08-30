@@ -13,10 +13,12 @@ class Prefs(context: Context) {
         /** Caches partages : evitent de relire et reparser le JSON a chaque touche. */
         private var countsCache: Map<String, Int>? = null
         private var bigramCache: HashMap<String, List<String>>? = null
+        private var trigramCache: HashMap<String, List<String>>? = null
 
         fun invalidateCaches() {
             countsCache = null
             bigramCache = null
+            trigramCache = null
         }
     }
 
@@ -593,6 +595,83 @@ class Prefs(context: Context) {
         0
     }
 
+    /**
+     * Enchainements a deux mots (trigrammes) : ce qui suit « mot1 mot2 ».
+     * Bien plus precis qu'un seul mot de contexte.
+     */
+    fun learnTrigram(w1: String, w2: String, next: String) {
+        if (!learningEnabled) return
+        if (w1.length < 2 || w2.length < 2 || next.length < 2) return
+        try {
+            val key = w1.lowercase() + " " + w2.lowercase()
+            val obj = JSONObject(sp.getString("trigrams", "{}") ?: "{}")
+            val nexts = obj.optJSONObject(key) ?: JSONObject()
+            nexts.put(next, nexts.optInt(next, 0) + 1)
+            while (nexts.length() > 4) {
+                val worst = nexts.keys().asSequence().minByOrNull { nexts.optInt(it, 0) } ?: break
+                nexts.remove(worst)
+            }
+            obj.put(key, nexts)
+            if (obj.length() > 4000) {
+                obj.keys().asSequence().take(800).toList().forEach { obj.remove(it) }
+            }
+            sp.edit().putString("trigrams", obj.toString()).apply()
+            trigramCache = null
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Suites probables apres « w1 w2 ». */
+    fun nextAfterTwo(w1: String, w2: String): List<String> {
+        val key = w1.lowercase() + " " + w2.lowercase()
+        trigramCache?.let { c -> c[key]?.let { return it } }
+        val result = try {
+            val obj = JSONObject(sp.getString("trigrams", "{}") ?: "{}")
+            val nexts = obj.optJSONObject(key)
+            if (nexts == null) emptyList()
+            else nexts.keys().asSequence()
+                .map { it to nexts.optInt(it, 0) }
+                .sortedByDescending { it.second }
+                .map { it.first }
+                .toList()
+        } catch (e: Exception) {
+            emptyList<String>()
+        }
+        val cache = trigramCache ?: HashMap<String, List<String>>().also { trigramCache = it }
+        if (cache.size > 300) cache.clear()
+        cache[key] = result
+        return result
+    }
+
+    /** Apprentissage en masse des trigrammes (import de SMS, de textes...). */
+    fun learnTrigramsBulk(map: Map<String, Map<String, Int>>) {
+        if (map.isEmpty()) return
+        try {
+            val obj = JSONObject(sp.getString("trigrams", "{}") ?: "{}")
+            for ((key, nexts) in map) {
+                val cur = obj.optJSONObject(key) ?: JSONObject()
+                for ((w, c) in nexts) cur.put(w, cur.optInt(w, 0) + c)
+                while (cur.length() > 4) {
+                    val worst = cur.keys().asSequence().minByOrNull { cur.optInt(it, 0) } ?: break
+                    cur.remove(worst)
+                }
+                obj.put(key, cur)
+            }
+            if (obj.length() > 6000) {
+                obj.keys().asSequence().take(1500).toList().forEach { obj.remove(it) }
+            }
+            sp.edit().putString("trigrams", obj.toString()).apply()
+            trigramCache = null
+        } catch (_: Exception) {
+        }
+    }
+
+    fun trigramCount(): Int = try {
+        JSONObject(sp.getString("trigrams", "{}") ?: "{}").length()
+    } catch (e: Exception) {
+        0
+    }
+
     /** Mots qui suivent souvent [previous], du plus frequent au moins frequent. */
     fun nextWords(previous: String): List<String> {
         val key = previous.lowercase()
@@ -638,7 +717,7 @@ class Prefs(context: Context) {
     }
 
     fun forgetLearnedWords() {
-        sp.edit().remove("freq").remove("bigrams").remove("learned").apply()
+        sp.edit().remove("freq").remove("bigrams").remove("trigrams").remove("learned").apply()
         invalidateCaches()
     }
 

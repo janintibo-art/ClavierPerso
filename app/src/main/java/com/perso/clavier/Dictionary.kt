@@ -13,7 +13,17 @@ import kotlin.math.min
  */
 object Dictionary {
 
-    class Entry(val norm: String, val word: String, val rank: Int)
+    class Entry(val norm: String, val word: String, val rank: Int) {
+        /**
+         * Les premiers mots du fichier sont verifies a la main ; les suivants
+         * viennent de la generation morphologique et peuvent contenir quelques
+         * formes douteuses. On ne les propose donc jamais en premier.
+         */
+        val verified: Boolean get() = rank < VERIFIED_LIMIT
+    }
+
+    /** Nombre de mots verifies en tete du dictionnaire. */
+    private const val VERIFIED_LIMIT = 60000
 
     private class Index(entries: List<Entry>) {
         /** Triee par forme normalisee : permet la recherche dichotomique des completions. */
@@ -164,7 +174,8 @@ object Dictionary {
         lang: Int,
         prefix: String,
         max: Int = 3,
-        previousWord: String = ""
+        previousWord: String = "",
+        beforePrevious: String = ""
     ): Result {
         val l = lang.coerceIn(0, 2)
         val prefs = Prefs(context)
@@ -173,12 +184,15 @@ object Dictionary {
         // Rien de tape : proposer la suite habituelle du mot precedent
         if (p.isEmpty()) {
             if (previousWord.isBlank()) return Result(emptyList(), null, true)
-            val personal = prefs.nextWords(previousWord)
-            val model = if (l == 0) LanguageModel.nextWords(context, previousWord) else emptyList()
-            // Les habitudes personnelles d'abord, completees par le modele
             val merged = LinkedHashSet<String>()
-            personal.forEach { merged.add(it) }
-            model.forEach { merged.add(it) }
+            // 1. Deux mots de contexte : la prediction la plus fiable
+            if (beforePrevious.isNotBlank()) {
+                prefs.nextAfterTwo(beforePrevious, previousWord).forEach { merged.add(it) }
+            }
+            // 2. Habitudes personnelles sur un mot
+            prefs.nextWords(previousWord).forEach { merged.add(it) }
+            // 3. Modele de langue general
+            if (l == 0) LanguageModel.nextWords(context, previousWord).forEach { merged.add(it) }
             return Result(merged.take(max).toList(), null, true)
         }
 
@@ -186,6 +200,8 @@ object Dictionary {
         val near = neighbors(l)
         val counts = prefs.wordCounts()
         val nextAfterPrev = if (previousWord.isNotBlank()) prefs.nextWords(previousWord) else emptyList()
+        val nextAfterTwo = if (beforePrevious.isNotBlank() && previousWord.isNotBlank())
+            prefs.nextAfterTwo(beforePrevious, previousWord) else emptyList()
         // Modele de langue embarque (francais uniquement)
         val useLm = l == 0
         val lmNext = if (useLm && previousWord.isNotBlank())
@@ -234,6 +250,12 @@ object Dictionary {
             }
         }
 
+        // --- 1 bis. Passe trigramme : ce qui suit habituellement ces deux mots ---
+        for ((i2, w) in nextAfterTwo.withIndex()) {
+            val n = normalize(w)
+            if (n.length >= p.length && n.startsWith(p)) offer(w, -220 + i2 * 10)
+        }
+
         // --- 1 ter. Passe prioritaire : mots attendus apres le mot precedent ---
         // Sans cela ils se perdent dans la masse des completions possibles.
         if (useLm) {
@@ -263,6 +285,8 @@ object Dictionary {
             if (e.norm.length == p.length) continue
             val base = if (typedIsKnown) 60 else 110
             var sc = base + (e.norm.length - p.length) * 4 + e.rank / 45
+            // Une forme generee automatiquement reste derriere les mots verifies
+            if (!e.verified) sc += 260
             if (useLm) {
                 // Un mot courant du francais remonte
                 sc -= LanguageModel.frequency(context, e.word) / 2
@@ -292,7 +316,9 @@ object Dictionary {
                 for (e in bucket) {
                     val d = distance(p, e.norm, maxCost, near)
                     if (d in 1..maxCost) {
-                        val base = if (typedIsKnown) 520 else 0
+                        var base = if (typedIsKnown) 520 else 0
+                        // Les formes generees ne corrigent qu'a defaut de mot verifie
+                        if (!e.verified) base += 200
                         offer(e.word, base + d * 14 + e.rank / 45, d)
                     }
                 }

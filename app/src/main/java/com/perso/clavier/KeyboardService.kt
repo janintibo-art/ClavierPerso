@@ -39,6 +39,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private val composing = StringBuilder()
     private var lastWord = ""
+    private var wordBeforeLast = ""
     private var expectedCursor = -1
     private var lastAutoCorrect: Pair<String, String>? = null
     private var lastSpaceTime = 0L
@@ -54,6 +55,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         composing.append(before.takeLastWhile { it.isLetter() || it == '\'' })
         val rest = before.dropLast(composing.length).trimEnd()
         lastWord = rest.takeLastWhile { it.isLetter() || it == '\'' }.lowercase()
+        val rest2 = rest.dropLast(lastWord.length).trimEnd()
+        wordBeforeLast = rest2.takeLastWhile { it.isLetter() || it == '\'' }.lowercase()
         lastAutoCorrect = null
     }
 
@@ -716,6 +719,9 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private fun previousWord(): String = lastWord
 
+    /** Mot situe deux positions avant : sert a la prediction par trigramme. */
+    private fun wordBeforePrevious(): String = wordBeforeLast
+
     private var suggestionSeq = 0
     private var pendingCorrection: String? = null
     private val suggestionRunnable = Runnable { computeSuggestions() }
@@ -752,6 +758,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
         val prefix = currentPrefix()
         val prev = previousWord()
+        val prev2 = wordBeforePrevious()
         if (prefix.isEmpty() && prev.isEmpty()) {
             kb.suggestions = emptyList()
             pendingCorrection = null
@@ -761,7 +768,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         val seq = ++suggestionSeq
         thread {
             val res = try {
-                Dictionary.suggest(this, lang, prefix, 3, prev)
+                Dictionary.suggest(this, lang, prefix, 3, prev, prev2)
             } catch (e: Exception) {
                 null
             } ?: return@thread
@@ -910,6 +917,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
         if (written.isNotEmpty()) {
             learn(written)
+            if (!incognito && wordBeforeLast.isNotEmpty() && lastWord.isNotEmpty()) {
+                p.learnTrigram(wordBeforeLast, lastWord, written.lowercase())
+            }
+            wordBeforeLast = lastWord
             lastWord = written.lowercase()
             if (p.autoLanguage) checkLanguage(written)
         }
@@ -1073,6 +1084,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             p.learnWord(word.lowercase(), prev)
         }
         composing.setLength(0)
+        if (!incognito && wordBeforeLast.isNotEmpty() && lastWord.isNotEmpty()) {
+            prefs().learnTrigram(wordBeforeLast, lastWord, word.lowercase())
+        }
+        wordBeforeLast = lastWord
         lastWord = word.lowercase()
         lastAutoCorrect = null
         pendingCorrection = null

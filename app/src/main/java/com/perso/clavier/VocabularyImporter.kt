@@ -43,15 +43,19 @@ object VocabularyImporter {
         val tokens = tokenize(text)
         val counts = HashMap<String, Int>()
         val bigrams = HashMap<String, HashMap<String, Int>>()
+        val trigrams = HashMap<String, HashMap<String, Int>>()
         var previous: String? = null
+        var before: String? = null
 
         for (t in tokens) {
             if (t == "\u0000") {
                 previous = null
+                before = null
                 continue
             }
             if (t.length < 2 || t.length > 24) {
                 previous = null
+                before = null
                 continue
             }
             counts[t] = (counts[t] ?: 0) + weight
@@ -59,14 +63,23 @@ object VocabularyImporter {
             if (p != null) {
                 val m = bigrams.getOrPut(p) { HashMap() }
                 m[t] = (m[t] ?: 0) + weight
+                val b = before
+                if (b != null) {
+                    val key = "$b $p"
+                    val m3 = trigrams.getOrPut(key) { HashMap() }
+                    m3[t] = (m3[t] ?: 0) + weight
+                }
             }
+            before = previous
             previous = t
         }
         // On ignore les mots vus une seule fois dans un petit texte : trop de fautes de frappe
         if (tokens.size > 400) {
             counts.entries.removeAll { it.value <= 1 }
         }
-        Prefs(context).learnBulk(counts, bigrams)
+        val prefs = Prefs(context)
+        prefs.learnBulk(counts, bigrams)
+        prefs.learnTrigramsBulk(trigrams)
         return Report(counts.size, bigrams.values.sumOf { it.size }, source)
     }
 
