@@ -35,6 +35,7 @@ class SettingsActivity : Activity() {
         const val REQ_SMS_CODE = 53
         const val PICK_CHAT = 45
         const val PICK_BACKUP = 46
+        const val SAVE_BACKUP = 47
     }
 
     private lateinit var prefs: Prefs
@@ -458,6 +459,8 @@ class SettingsActivity : Activity() {
         root.addView(button("📱 Importer une conversation exportée") { importChatFile() })
         root.addView(button("📝 Coller un texte que j'ai écrit") { importTextDialog() })
         root.addView(button("📖 Importer le dictionnaire Android") { importUserDict() })
+        root.addView(button("➕ Ajouter mes propres mots") { addWordsDialog { refreshMemory() } })
+        root.addView(button("🔎 Voir / retirer les mots appris") { manageWordsDialog { refreshMemory() } })
         root.addView(button("🗑️ Oublier tous les mots appris") {
             prefs.forgetLearnedWords()
             refreshMemory()
@@ -636,6 +639,10 @@ class SettingsActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SAVE_BACKUP && resultCode == RESULT_OK) {
+            data?.data?.let { writeBackupTo(it) }
+            return
+        }
         if (requestCode == PICK_BACKUP && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             try {
@@ -797,25 +804,53 @@ class SettingsActivity : Activity() {
     }
 
     private fun exportBackup() {
-        val text = Backup.export(this)
-        val field = EditText(this).apply {
-            setText(text.take(4000))
-            minLines = 4
-            textSize = 10f
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-        }
         AlertDialog.Builder(this)
-            .setTitle("Sauvegarde")
-            .setMessage("Copie ce texte et garde-le en lieu sûr (note, mail, fichier).")
-            .setView(ScrollView(this).apply { addView(field) })
-            .setPositiveButton("Copier tout") { _, _ ->
+            .setTitle("Sauvegarder mes réglages")
+            .setMessage(
+                "Un fichier sera créé : tu pourras le garder, l'envoyer par mail " +
+                        "ou le restaurer sur un autre téléphone.\n\n" + Backup.summary(this)
+            )
+            .setPositiveButton("Enregistrer le fichier") { _, _ ->
+                val name = "AnarchieClavier-sauvegarde-" +
+                        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.FRANCE)
+                            .format(java.util.Date()) + ".json"
+                try {
+                    startActivityForResult(
+                        Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_TITLE, name)
+                        },
+                        SAVE_BACKUP
+                    )
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Impossible d'ouvrir l'explorateur", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNeutralButton("Copier dans le presse-papiers") { _, _ ->
+                val text = Backup.export(this)
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("Sauvegarde clavier", text))
-                Toast.makeText(this, "Sauvegarde copiée ✅", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this,
+                    "Sauvegarde copiée (" + text.length + " caractères). Colle-la dans une note.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-            .setNeutralButton("Coller une sauvegarde") { _, _ -> importBackupDialog() }
-            .setNegativeButton("Fermer", null)
+            .setNegativeButton("Annuler", null)
             .show()
+    }
+
+    private fun writeBackupTo(uri: android.net.Uri) {
+        try {
+            val text = Backup.export(this)
+            contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(text.toByteArray(Charsets.UTF_8))
+            }
+            Toast.makeText(this, "✅ Sauvegarde enregistrée", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Échec de l'enregistrement", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun importBackupDialog() {
@@ -836,7 +871,15 @@ class SettingsActivity : Activity() {
     private fun applyBackup(text: String) {
         val n = Backup.import(this, text)
         if (n < 0) {
-            Toast.makeText(this, "Sauvegarde illisible", Toast.LENGTH_LONG).show()
+            AlertDialog.Builder(this)
+                .setTitle("Sauvegarde illisible")
+                .setMessage(
+                    "Le fichier semble incomplet ou tronqué (" + text.length + " caractères lus).\n\n" +
+                            "Utilise « Enregistrer le fichier » plutôt que le copier-coller : " +
+                            "les notes et messageries coupent souvent les longs textes."
+                )
+                .setPositiveButton("OK", null)
+                .show()
             return
         }
         Toast.makeText(this, "✅ " + n + " réglages restaurés. Rouvre les réglages.", Toast.LENGTH_LONG).show()
@@ -866,6 +909,65 @@ class SettingsActivity : Activity() {
                 recreate()
             }
             .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    /** Saisie libre de mots a apprendre (separes par espaces, virgules ou lignes). */
+    private fun addWordsDialog(onDone: () -> Unit) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+        }
+        layout.addView(TextView(this).apply {
+            text = "Écris ou colle tes mots, séparés par des espaces, des virgules ou des retours à la ligne.\n" +
+                    "Exemple : Janintibo, Termux, Atoll, kinésithérapeute"
+            textSize = 13f
+            setTextColor(Color.parseColor("#5F6368"))
+        })
+        val field = EditText(this).apply {
+            hint = "mes mots…"
+            minLines = 4
+            gravity = Gravity.TOP
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        layout.addView(field)
+        AlertDialog.Builder(this)
+            .setTitle("Ajouter des mots")
+            .setView(ScrollView(this).apply { addView(layout) })
+            .setPositiveButton("Ajouter") { _, _ ->
+                val words = field.text.toString()
+                    .split(Regex("[\\s,;·|]+"))
+                    .map { it.trim().trim('.', '!', '?', ':', '"', '(', ')') }
+                    .filter { it.length in 2..30 }
+                val n = prefs.addManualWords(words)
+                onDone()
+                Toast.makeText(
+                    this,
+                    if (n > 0) "✅ " + n + " mots ajoutés" else "Aucun mot valide",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    /** Liste des mots appris, avec recherche et suppression. */
+    private fun manageWordsDialog(onDone: () -> Unit) {
+        val all = prefs.wordCounts().entries.sortedByDescending { it.value }
+        if (all.isEmpty()) {
+            Toast.makeText(this, "Aucun mot appris pour l'instant", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = all.take(300).map { it.key + "   (" + it.value + ")" }.toTypedArray()
+        val keys = all.take(300).map { it.key }
+        AlertDialog.Builder(this)
+            .setTitle(all.size.toString() + " mots appris — touche pour retirer")
+            .setItems(labels) { _, which ->
+                prefs.removeLearnedWord(keys[which])
+                onDone()
+                Toast.makeText(this, "« " + keys[which] + " » retiré", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Fermer", null)
             .show()
     }
 

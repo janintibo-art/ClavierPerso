@@ -8,13 +8,17 @@ object Backup {
 
     private const val VERSION = 1
 
-    fun export(context: Context): String {
+    /** Cles trop volumineuses ou sans interet pour une sauvegarde. */
+    private val skip = setOf("clips", "recent_emojis")
+
+    fun export(context: Context, includeClips: Boolean = false): String {
         val sp = context.getSharedPreferences("clavier", Context.MODE_PRIVATE)
         val root = JSONObject()
         root.put("_version", VERSION)
         root.put("_app", "Anarchie Clavier")
         val data = JSONObject()
         for ((k, v) in sp.all) {
+            if (k in skip && !includeClips) continue
             when (v) {
                 is String -> data.put(k, v)
                 is Int -> data.put(k, v)
@@ -32,8 +36,11 @@ object Backup {
     /** Renvoie le nombre de reglages restaures, ou -1 si le fichier est invalide. */
     fun import(context: Context, text: String): Int {
         return try {
-            val root = JSONObject(text)
-            val data = root.optJSONObject("data") ?: return -1
+            val cleaned = text.trim().let {
+                if (it.startsWith("{")) it else it.substring(it.indexOf('{'))
+            }
+            val root = JSONObject(cleaned)
+            val data = root.optJSONObject("data") ?: root
             val sp = context.getSharedPreferences("clavier", Context.MODE_PRIVATE)
             val e = sp.edit()
             var n = 0

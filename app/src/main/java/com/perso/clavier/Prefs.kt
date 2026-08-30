@@ -395,7 +395,8 @@ class Prefs(context: Context) {
         if (w.length < 2 || w.length > 30) return
         try {
             val obj = JSONObject(sp.getString("freq", "{}") ?: "{}")
-            val count = obj.optInt(w, 0) + 1
+            // +2 par mot ecrit : le clavier s'adapte plus vite
+            val count = obj.optInt(w, 0) + 2
             obj.put(w, count)
             // Elagage : on retire les mots vus une seule fois quand c'est trop gros
             if (obj.length() > 5000) {
@@ -501,6 +502,28 @@ class Prefs(context: Context) {
         if (cache.size > 200) cache.clear()
         cache[key] = result
         return result
+    }
+
+    /** Ajoute des mots saisis manuellement : poids fort pour qu'ils sortent en premier. */
+    fun addManualWords(words: List<String>): Int {
+        val counts = HashMap<String, Int>()
+        for (w in words) {
+            val t = w.trim()
+            if (t.length in 2..30) counts[t] = 30
+        }
+        if (counts.isEmpty()) return 0
+        learnBulk(counts, emptyMap())
+        return counts.size
+    }
+
+    fun removeLearnedWord(word: String) {
+        try {
+            val obj = JSONObject(sp.getString("freq", "{}") ?: "{}")
+            obj.remove(word)
+            sp.edit().putString("freq", obj.toString()).apply()
+            invalidateCaches()
+        } catch (_: Exception) {
+        }
     }
 
     fun forgetLearnedWords() {

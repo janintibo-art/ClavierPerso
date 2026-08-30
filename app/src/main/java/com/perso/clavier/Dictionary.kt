@@ -186,11 +186,22 @@ object Dictionary {
         for ((w, count) in counts) {
             val n = normalize(w)
             if (n.length >= p.length && n.startsWith(p)) {
-                var score = 90 - (count * 20).coerceAtMost(280)
+                // Un mot personnel bat toujours le dictionnaire general
+                var score = 40 - (count * 22).coerceAtMost(320)
                 val bi = nextAfterPrev.indexOf(w)
-                if (bi >= 0) score -= (140 - bi * 25)
+                if (bi >= 0) score -= (160 - bi * 25)
                 if (n == p) score += 45
                 offer(w, score)
+            }
+        }
+        // Mots personnels proches (faute de frappe sur un mot appris)
+        if (p.length >= 4) {
+            for ((w, count) in counts) {
+                val n = normalize(w)
+                if (n == p || n.startsWith(p)) continue
+                if (abs(n.length - p.length) > 2) continue
+                val d = distance(p, n, 20, near)
+                if (d in 1..20) offer(w, 60 + d * 10 - (count * 8).coerceAtMost(120))
             }
         }
 
