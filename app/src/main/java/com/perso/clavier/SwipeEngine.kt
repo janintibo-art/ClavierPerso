@@ -42,7 +42,7 @@ object SwipeEngine {
         val first = visited.first()
         val last = visited.last()
         val pivots = pivotLetters(path, keys, keyWidth)
-        val sequence = visited.joinToString("")
+        val sequence = visited
 
         val prefs = Prefs(context)
         val counts = prefs.wordCounts()
