@@ -38,3 +38,16 @@ invisible, et l'accent semblait choisi au hasard.
 - Le menu de variantes est désormais dessiné en dernier, au-dessus de tout.
 - La bulle d'aperçu est masquée tant qu'un menu est ouvert.
 - Les effets de frappe sont également suspendus pendant l'affichage du menu.
+
+## Correction (v41) : les objets touches étaient recréés à chaque dessin
+
+`rows()` reconstruisait toutes les touches à chaque rafraîchissement de l'écran.
+La référence mémorisée à l'ouverture du menu ne correspondait donc plus à celle
+du dessin suivant, et la recherche du rectangle de la touche échouait : le menu
+s'ouvrait, vibrait, mais ne s'affichait jamais.
+
+- Les rangées sont mises en cache et ne sont reconstruites que lorsque la
+  disposition change réellement (symboles, langue, rangée de chiffres, mode).
+- La recherche du rectangle d'une touche accepte un repli par libellé et code,
+  pour rester fiable même après un changement de disposition.
+- Bénéfice annexe : plus aucune allocation d'objets pendant l'animation RGB.

@@ -167,6 +167,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     fun refresh() {
         if (popupKey != null) closePopup(false)
         prefs = Prefs(context)
+        rowsCache = null
         textPaint.typeface = Fonts.get(prefs.fontIndex)
         bgBitmap = null
         if (prefs.bgImageEnabled) {
@@ -244,7 +245,27 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         Key("⏎", CODE_ENTER, 1.5f)
     )
 
+    /**
+     * Cache des rangees. Sans lui, chaque dessin recreait tous les objets Key :
+     * les references memorisees (touche pressee, menu de variantes) ne
+     * correspondaient plus a celles du dessin suivant, et les elements qui en
+     * dependent ne s'affichaient jamais.
+     */
+    private var rowsCache: List<List<Key>>? = null
+    private var rowsCacheKey = ""
+
     private fun rows(): List<List<Key>> {
+        val key = "" + symbols + "|" + prefs.langIndex + "|" + prefs.numberRow +
+                "|" + prefs.simpleMode + "|" + prefs.compactToolbar
+        val cached = rowsCache
+        if (cached != null && key == rowsCacheKey) return cached
+        val built = buildRows()
+        rowsCache = built
+        rowsCacheKey = key
+        return built
+    }
+
+    private fun buildRows(): List<List<Key>> {
         if (symbols) {
             return listOf(
                 listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map { letterKey(it) },
@@ -622,7 +643,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         // superposeraient exactement au meme endroit.
         val pk = pressedKey
         if (pk != null && pk.code >= 0 && prefs.keyPopup && popupKey == null) {
-            val rect = keyRects.firstOrNull { it.first === pk }?.second
+            val rect = rectFor(pk)
             if (rect != null) {
                 val bw = maxOf(rect.width() * 1.25f, dp(46f))
                 val bh = rowHeight()
@@ -790,12 +811,17 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
+    /** Rectangle d'une touche, meme si l'instance a ete recreee entre-temps. */
+    private fun rectFor(key: Key): RectF? =
+        keyRects.firstOrNull { it.first === key }?.second
+            ?: keyRects.firstOrNull { it.first.label == key.label && it.first.code == key.code }?.second
+
     /** Menu de variantes affiche au-dessus de la touche pressee. */
     private fun drawVariantPopup(canvas: Canvas) {
         val key = popupKey ?: return
         val variants = popupVariants
         if (variants.isEmpty()) return
-        val keyRect = keyRects.firstOrNull { it.first === key }?.second ?: return
+        val keyRect = rectFor(key) ?: return
 
         popupRects.clear()
         val cellW = maxOf(dp(46f), keyRect.width())
@@ -889,7 +915,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         return best
     }
 
-    private fun rectOf(key: Key): RectF? = keyRects.firstOrNull { it.first === key }?.second
+    private fun rectOf(key: Key): RectF? = rectFor(key)
 
     private fun addRipple(key: Key) {
         if (prefs.pressEffect == 0) return
