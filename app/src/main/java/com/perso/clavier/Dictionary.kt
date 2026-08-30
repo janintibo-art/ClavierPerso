@@ -21,6 +21,10 @@ object Dictionary {
         /** Index par (premiere lettre, longueur) : reduit fortement l'espace de recherche. */
         val byFirstLen: Map<Long, List<Entry>> =
             entries.groupBy { (it.norm[0].code.toLong() shl 8) or it.norm.length.toLong() }
+
+        /** Index par (premiere lettre, derniere lettre) : utilise par le glissement. */
+        val byFirstLast: Map<Int, List<Entry>> =
+            entries.groupBy { (it.norm[0].code shl 8) or it.norm.last().code }
         val norms: HashSet<String> = HashSet(entries.map { it.norm })
         val byNorm: HashMap<String, Entry> = HashMap<String, Entry>().apply {
             entries.forEach { if (!containsKey(it.norm)) put(it.norm, it) }
@@ -92,6 +96,19 @@ object Dictionary {
 
     /** Entrees du dictionnaire, pour la reconnaissance du glissement. */
     fun entriesFor(context: Context, lang: Int): List<Entry> = index(context, lang).sorted
+
+    /**
+     * Mots commencant par [first] et finissant par [last].
+     * Le glissement connait ces deux lettres : cela reduit la recherche
+     * de 120 000 mots a quelques centaines.
+     */
+    fun entriesByEnds(context: Context, lang: Int, first: Char, last: Char): List<Entry> {
+        val idx = index(context, lang)
+        val out = ArrayList<Entry>()
+        // La derniere lettre du trace peut correspondre a une lettre doublee
+        idx.byFirstLast[(first.code shl 8) or last.code]?.let { out.addAll(it) }
+        return out
+    }
 
     fun contains(context: Context, lang: Int, word: String): Boolean =
         index(context, lang).norms.contains(normalize(word))

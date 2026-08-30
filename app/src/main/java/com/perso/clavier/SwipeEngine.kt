@@ -69,9 +69,11 @@ object SwipeEngine {
         // 1. Mots personnels d'abord
         for ((w, c) in counts) consider(w, 60 + (c * 4).coerceAtMost(120))
 
-        // 2. Dictionnaire, pondere par la frequence reelle du mot en francais
+        // 2. Dictionnaire : on ne teste que les mots ayant les bonnes lettres
+        // de debut et de fin, au lieu de parcourir tout le dictionnaire.
         val useLm = lang == 0
-        for (e in Dictionary.entriesFor(context, lang)) {
+        for (e in Dictionary.entriesByEnds(context, lang, first, last)) {
+            // (l'index garantit deja les bonnes lettres de debut et de fin)
             val bonus = if (useLm) LanguageModel.frequency(context, e.word) / 3 else 0
             consider(e.word, bonus - (e.rank / 400))
         }
