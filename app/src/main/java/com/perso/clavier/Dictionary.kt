@@ -155,15 +155,24 @@ object Dictionary {
 
         // Rien de tape : proposer la suite habituelle du mot precedent
         if (p.isEmpty()) {
-            val next = if (previousWord.isBlank()) emptyList()
-            else prefs.nextWords(previousWord).take(max)
-            return Result(next, null, true)
+            if (previousWord.isBlank()) return Result(emptyList(), null, true)
+            val personal = prefs.nextWords(previousWord)
+            val model = if (l == 0) LanguageModel.nextWords(context, previousWord) else emptyList()
+            // Les habitudes personnelles d'abord, completees par le modele
+            val merged = LinkedHashSet<String>()
+            personal.forEach { merged.add(it) }
+            model.forEach { merged.add(it) }
+            return Result(merged.take(max).toList(), null, true)
         }
 
         val idx = index(context, l)
         val near = neighbors(l)
         val counts = prefs.wordCounts()
         val nextAfterPrev = if (previousWord.isNotBlank()) prefs.nextWords(previousWord) else emptyList()
+        // Modele de langue embarque (francais uniquement)
+        val useLm = l == 0
+        val lmNext = if (useLm && previousWord.isNotBlank())
+            LanguageModel.nextWords(context, previousWord) else emptyList()
         val typedIsKnown = idx.norms.contains(p) || counts.containsKey(prefix.lowercase())
 
         // score : plus petit = meilleur
@@ -208,6 +217,18 @@ object Dictionary {
             }
         }
 
+        // --- 1 ter. Passe prioritaire : mots attendus apres le mot precedent ---
+        // Sans cela ils se perdent dans la masse des completions possibles.
+        if (useLm) {
+            for ((rank2, w) in lmNext.withIndex()) {
+                val n = normalize(w)
+                if (n.length >= p.length && n.startsWith(p)) {
+                    val real = idx.byNorm[n]?.word ?: w
+                    offer(real, -120 + rank2 * 10)
+                }
+            }
+        }
+
         // --- 2. Completions par recherche dichotomique ---
         var lo = 0
         var hi = idx.sorted.size
@@ -217,14 +238,22 @@ object Dictionary {
         }
         var examined = 0
         var i = lo
-        while (i < idx.sorted.size && examined < 400) {
+        while (i < idx.sorted.size && examined < 3000) {
             val e = idx.sorted[i]
             if (!e.norm.startsWith(p)) break
             examined++
             i++
             if (e.norm.length == p.length) continue
             val base = if (typedIsKnown) 60 else 110
-            offer(e.word, base + (e.norm.length - p.length) * 4 + e.rank / 45)
+            var sc = base + (e.norm.length - p.length) * 4 + e.rank / 45
+            if (useLm) {
+                // Un mot courant du francais remonte
+                sc -= LanguageModel.frequency(context, e.word) / 2
+                // Un mot qui suit habituellement le precedent remonte beaucoup
+                val bi = lmNext.indexOf(e.word.lowercase())
+                if (bi >= 0) sc -= (90 - bi * 12)
+            }
+            offer(e.word, sc)
         }
 
         // --- 3. Corrections : uniquement les mots de longueur proche (index par longueur) ---

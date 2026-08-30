@@ -1,0 +1,290 @@
+je 62 suis:23,vais:22,te:20,ne:14,ai:13,pense:9
+le 34 temps:4,restaurant:1,travail:1,pain:1,magasin:1,train:1
+tu 29 as:19,es:13,peux:12,veux:12,vas:9,me:8
+de 29 le:12,la:12,te:10,me:10,rien:8,rentrer:2
+est 28 ce:16,que:11,il:10,pas:9,une:1,vraiment:1
+la 25 maison:2,semaine:2,gare:1,photo:1,banque:1,réunion:1
+que 23 je:19,tu:16,il:10,ce:9,c:8,est:2
+te 22 rappelle:14,remercie:11,dis:11,réponds:10,laisse:10,dirai:1
+ce 21 soir:17,week:11,matin:11,que:6,sera:1,point:1
+pas 20 de:14,encore:12,le:10,la:9,venir:1,ce:1
+il 18 faut:14,y:14,est:10,a:9,fait:8,va:8
+me 17 rappeler:13,dire:12,laisse:10,voir:9,envoyer:1,coucher:1
+suis 15 en:3,désolé:1,très:1,content:1,vraiment:1,épuisé:1
+pour 15 toi:13,ton:11,le:11,moi:11,la:9,mardi:1
+ne 14 sais:13,peux:12,pense:10,vais:9,suis:8,pourrai:1
+peux 14 tu:13,me:12,pas:12,venir:9,faire:1
+bonne 14 journée:15,soirée:13,nuit:11,idée:9,chance:9,nouvelle:1
+vais 14 faire:2,essayer:1,arriver:1,y:1,me:1,voir:1
+demain 13 matin:15,soir:11,midi:10,après:1,je:1
+très 12 bien:14,bonne:12,fatigué:10,content:10,beau:1,joyeux:1
+tout 12 de:13,va:12,à:11,le:10,heure:1,est:1
+toi 12 aussi:1,sur:1,et:1,très:1
+ai 12 pas:2,bien:1,envoyé:1,passé:1,oublié:1
+as 10 le:1,raison:1,dit:1,besoin:1,pu:1,vues:1
+a 10 beaucoup:1,du:1,pas:1,été:1
+va 9 bien:2,je:1
+en 9 route:1,rentrant:1,réunion:1,retard:1,vacances:1,train:1
+soir 9 devant:1,je:1
+on 9 se:2,peut:2,pourrait:1,ne:1,en:1
+une 9 bonne:4,heure:1,demi:1,très:1
+bien 8 reçu:1,tu:1,passé:1
+dans 8 une:12,le:12,la:12,dix:11
+merci 8 beaucoup:14,de:13,pour:11
+beaucoup 8 de:13,pour:12,plus:10,très:1
+heure 8 ce:1,tu:1
+faut 8 que:14,pas:11,le:10,absolument:1
+week 8 end:13
+moi 8 tout:1,je:1,des:1
+aujourd 7 hui:16
+ton 7 message:3,nouveau:1,aide:1
+matin 7
+quelque 7 chose:15,part:12
+hui 6 espère:1,on:1
+se 6 voit:2,promener:1,retrouve:1,passe:1,voir:1
+fais 6 ce:1,de:1,confiance:1,comme:1
+pense 6 que:1,toi:1
+journée 6 toi:1,au:1,raconte:1
+vous 6 êtes:12,avez:11,pouvez:10,allez:9,est:1
+sais 5 pas:1
+fatigué 5 là:1
+bientôt 5
+dire 5 quelle:1,explique:1,quelque:1
+y 5 a:2,réfléchir:1
+les 5 courses:1,as:1,enfants:1
+veux 5 quelque:1,dire:1,que:1
+chose 5 important:1
+passe 5 une:1,la:1,ta:1,vraiment:1,te:1
+laisse 5 bonne:1
+voir 5 ce:1,ton:1,demain:1
+elle 5 est:12,a:11,va:10,me:9,ne:8
+c 5 est:12,était:11
+à 5 toi:12,demain:11,bientôt:10,tout:9,la:8,le:7
+vas 4 tu:1,bien:1
+arrive 4 dans:1,tout:1
+dix 4 minutes:2
+réponds 4 dès:1,plus:1
+encore 4 je:1,pour:1
+temps 4 passe:1,de:1
+maintenant 4 je:2,tout:1
+qu 4 il:12,elle:11,est:10,on:10
+es 4 libre:1,disponible:1
+faire 4 comme:1,les:1,je:1,aujourd:1
+rappelle 4 dans:1
+était 4 très:1,éteint:1
+soirée 4 merci:1
+plus 4 assez:1,tard:1
+avec 4 toi:13,moi:11,le:10,la:9
+sur 4 le:12,la:11,les:10,ce:1
+espère 3 que:1
+message 3 je:1,merci:1
+dès 3 que:2,demain:1
+rappeler 3 quand:1
+désolé 3 je:2,pour:1
+venir 3 demain:1
+viens 3 de:3
+end 3 tu:1
+idée 3 on:1
+travail 3 avant:1,est:1,tout:1
+oublie 3 pas:1
+nuit 3 fais:1
+retard 3 je:2
+fait 3 très:1
+vraiment 3 une:1,désolé:1,vite:1
+content 3 pour:1
+et 3 je:1,bonne:1,donne:1
+remercie 3 encore:1
+part 3
+passé 3 une:2,ne:1
+midi 3 si:1
+école 3 dans:1
+accord 3 avec:1
+courage 3 pour:1
+nous 3 sommes:12,avons:11,allons:10,pouvons:9
+j 3 ai:12,espère:11,arrive:10,étais:9,aime:8
+n 3 est:12,ai:11,a:10,oublie:9
+d 3 accord:12,abord:11,ailleurs:10
+l 3 heure:12,école:11,autre:10
+s 3 il:12,est:11
+bon 3 courage:12,appétit:11,week:10
+toute 3 la:12,façon:11
+comment 2 vas:1,se:1
+minutes 2
+quand 2 tu:2
+voit 2 quelle:1,plus:1
+quelle 2 heure:2
+devant 2 le:1,la:1
+rentrer 2 la:1
+maison 2 je:1,maintenant:1
+peut 2 essayer:1,se:1
+essayer 2 de:1
+comme 2 tu:2
+avant 2 ce:1,de:1
+du 2 bureau:1,retard:1
+réunion 2 je:1,a:1
+monde 2 dans:1
+train 2 a:1,de:1
+comprends 2 pas:1,très:1
+avoir 2 prévenu:1,invité:1
+donne 2 ma:1,moi:1
+si 2 tu:2
+ta 2 journée:1,compréhension:1
+au 2 travail:1,courant:1
+semaine 2 prochaine:2
+prochaine 2 pendant:1
+chercher 2 en:1,les:1
+là 2 je:1
+important 2
+sommes 2
+avons 2
+allons 2
+pouvons 2
+êtes 2
+avez 2
+pouvez 2
+allez 2
+étais 2
+aime 2
+abord 2
+ailleurs 2
+autre 2
+chance 2
+appétit 2
+rien 2
+dis 2
+façon 2
+bonjour 1 comment:1
+salut 1 ça:1
+ça 1 va:1
+route 1 arrive:1
+possible 1
+dirai 1 ce:1
+pourrai 1 pas:1
+restaurant 1
+parte 1 maintenant:1
+libre 1 samedi:1
+samedi 1
+raison 1 je:1
+dit 1
+finir 1 le:1
+prendre 1 le:1
+pain 1 en:1
+rentrant 1 il:1
+plaît 1
+appelle 1 dès:1
+sors 1 du:1
+bureau 1 ce:1
+aussi 1 bisous:1
+bisous 1 bientôt:1
+beaux 1 rêves:1
+rêves 1 demain:1
+arrives 1 demain:1
+magasin 1 aujourd:1
+courses 1 tu:1
+arriver 1 en:1
+beau 1 aujourd:1
+pourrait 1 aller:1
+aller 1 se:1
+promener 1
+explique 1 moi:1
+nouvelle 1 je:1
+souhaite 1 un:1
+un 1 très:1
+joyeux 1 anniversaire:1
+anniversaire 1 passe:1
+félicitations 1 pour:1
+nouveau 1 travail:1
+mérité 1
+reçu 1 ton:1
+prévenu 1
+réfléchir 1 et:1
+ma 1 réponse:1
+réponse 1 demain:1
+rendez 1 vous:1
+confirmé 1 pour:1
+mardi 1 prochain:1
+prochain 1 quatorze:1
+quatorze 1 heures:1
+heures 1
+hésite 1 pas:1
+appeler 1 si:1
+besoin 1 de:1
+vu 1 heure:1
+pu 1 regarder:1
+regarder 1 le:1
+document 1 que:1
+envoyé 1
+aide 1 était:1
+gentil 1
+retrouve 1 devant:1
+gare 1 dans:1
+demi 1 heure:1
+dois 1 partir:1
+partir 1 maintenant:1
+envoyer 1 la:1
+photo 1 quand:1
+auras 1 le:1
+trouve 1 pas:1
+mes 1 clés:1
+clés 1 tu:1
+vues 1 quelque:1
+banque 1 avant:1
+coucher 1 tôt:1
+tôt 1 ce:1
+épuisé 1
+invité 1
+pars 1 en:1
+vacances 1 la:1
+pendant 1 quinze:1
+quinze 1 jours:1
+jours 1
+vite 1 on:1
+assez 1
+préparer 1 le:1
+repas 1 ce:1
+sera 1 prêt:1
+prêt 1 bientôt:1
+voiture 1
+problème 1 je:1
+tiens 1 au:1
+courant 1
+noté 1 je:1
+occupe 1 dès:1
+compréhension 1 et:1
+continuation 1 toi:1
+tard 1 là:1
+occupé 1
+mon 1 téléphone:1
+téléphone 1 était:1
+éteint 1 désolé:1
+après 1 midi:1
+disponible 1
+terminer 1 je:1
+rentre 1 la:1
+air 1 fatigué:1
+répondre 1 maintenant:1
+été 1 reportée:1
+reportée 1 la:1
+enfants 1 école:1
+raconte 1 moi:1
+absolument 1 que:1
+parle 1 est:1
+point 1
+attends 1 moi:1
+suite 1
+oublié 1 de:1
+crois 1 que:1
+meilleure 1 solution:1
+solution 1 pour:1
+reparle 1 demain:1
+trop 1 fatigué:1
+prends 1 soin:1
+soin 1 de:1
+des 1 nouvelles:1
+nouvelles 1
+fort 1 courage:1
+inquiète 1 pas:1
+confiance 1 fais:1
+sens 1
+parfait 1 merci:1
+eu 1 le:1

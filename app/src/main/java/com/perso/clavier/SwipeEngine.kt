@@ -69,9 +69,11 @@ object SwipeEngine {
         // 1. Mots personnels d'abord
         for ((w, c) in counts) consider(w, 60 + (c * 4).coerceAtMost(120))
 
-        // 2. Dictionnaire
+        // 2. Dictionnaire, pondere par la frequence reelle du mot en francais
+        val useLm = lang == 0
         for (e in Dictionary.entriesFor(context, lang)) {
-            consider(e.word, -(e.rank / 400))
+            val bonus = if (useLm) LanguageModel.frequency(context, e.word) / 3 else 0
+            consider(e.word, bonus - (e.rank / 400))
         }
 
         return results
