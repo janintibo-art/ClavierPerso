@@ -242,6 +242,31 @@ class Prefs(context: Context) {
         saveClips(clips().filter { it.second })
     }
 
+    /** Appui long sur ⌫ : efface mot par mot apres 1,6 s. */
+    var deleteByWord: Boolean
+        get() = sp.getBoolean("del_word", true)
+        set(v) { sp.edit().putBoolean("del_word", v).apply() }
+
+    /** Duree de la vibration, en millisecondes (0 = silencieux). */
+    var vibrationMs: Int
+        get() = sp.getInt("vibration_ms", 12)
+        set(v) { sp.edit().putInt("vibration_ms", v).apply() }
+
+    /** Marge sous le clavier, en dp (utile avec la navigation gestuelle). */
+    var bottomPadding: Int
+        get() = sp.getInt("bottom_pad", 0)
+        set(v) { sp.edit().putInt("bottom_pad", v).apply() }
+
+    /** 0 = pleine largeur, 1 = compact a gauche, 2 = compact a droite. */
+    var oneHandMode: Int
+        get() = sp.getInt("one_hand", 0)
+        set(v) { sp.edit().putInt("one_hand", v).apply() }
+
+    /** Indices des caracteres secondaires affiches sur les touches. */
+    var showSecondary: Boolean
+        get() = sp.getBoolean("show_secondary", true)
+        set(v) { sp.edit().putBoolean("show_secondary", v).apply() }
+
     /** Mode simple : barre d'outils reduite, comme un clavier classique. */
     var simpleMode: Boolean
         get() = sp.getBoolean("simple_mode", false)

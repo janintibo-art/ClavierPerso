@@ -121,6 +121,18 @@ class SettingsActivity : Activity() {
             Toast.makeText(this@SettingsActivity, "Disponible dans le vrai clavier", Toast.LENGTH_SHORT).show()
         }
 
+        override fun onDeleteWord() {
+            val t = testField.text
+            val s2 = t.toString().trimEnd()
+            val cut = s2.dropLastWhile { !it.isWhitespace() }
+            testField.setText(cut)
+            testField.setSelection(cut.length)
+        }
+
+        override fun onVoiceInput() {
+            Toast.makeText(this@SettingsActivity, "La dictée s'active dans le vrai clavier (appui long sur Espace)", Toast.LENGTH_SHORT).show()
+        }
+
         override fun onLangSwitch() {
             prefs.langIndex = (prefs.langIndex + 1) % Layouts.languages.size
             preview.refresh()
@@ -322,6 +334,34 @@ class SettingsActivity : Activity() {
         root.addView(hint("Tolérance de zone : rattrape les appuis qui tombent entre deux touches"))
         root.addView(seek(0, 16, prefs.touchMargin) {
             prefs.touchMargin = it
+            preview.refresh()
+        })
+
+        root.addView(hint("Appui long sur une lettre : accent, ou le chiffre / symbole affiché en petit."))
+        root.addView(switchRow("Afficher les chiffres et symboles sur les touches", prefs.showSecondary) {
+            prefs.showSecondary = it
+            preview.refresh()
+        })
+        root.addView(switchRow("Appui long sur ⌫ : effacer mot par mot", prefs.deleteByWord) {
+            prefs.deleteByWord = it
+        })
+        root.addView(hint("Appui long sur la barre d'espace : dictée vocale 🎤"))
+
+        // ----- Confort -----
+        root.addView(section("Confort de prise en main"))
+        root.addView(hint("Mode une main : rapproche les touches d'un côté de l'écran"))
+        root.addView(choiceRow(listOf("Pleine largeur", "À gauche", "À droite"), prefs.oneHandMode, 13f) {
+            prefs.oneHandMode = it
+            preview.refresh()
+        })
+        root.addView(hint("Marge sous le clavier (utile avec la navigation par gestes)"))
+        root.addView(seek(0, 40, prefs.bottomPadding) {
+            prefs.bottomPadding = it
+            preview.refresh()
+        })
+        root.addView(hint("Force de la vibration (0 = vibration système)"))
+        root.addView(seek(0, 40, prefs.vibrationMs) {
+            prefs.vibrationMs = it
             preview.refresh()
         })
 

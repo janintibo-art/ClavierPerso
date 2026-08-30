@@ -403,6 +403,43 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    /** Efface le mot entier a gauche du curseur. */
+    override fun onDeleteWord() {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(120, 0)?.toString() ?: ""
+        if (before.isEmpty()) return
+        // On enleve les espaces finaux, puis le mot
+        val trimmed = before.trimEnd()
+        val spaces = before.length - trimmed.length
+        val word = trimmed.takeLastWhile { !it.isWhitespace() }
+        val count = (spaces + word.length).coerceAtLeast(1)
+        ic.deleteSurroundingText(count, 0)
+        resync()
+        updateSuggestions()
+    }
+
+    /** Dictee vocale : ouvre la reconnaissance vocale du systeme. */
+    override fun onVoiceInput() {
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            // Bascule vers le clavier vocal du systeme s'il existe
+            val voice = imm.enabledInputMethodList.firstOrNull {
+                it.packageName.contains("google", true) &&
+                        it.id.contains("voice", true)
+            }
+            if (voice != null) {
+                switchInputMethod(voice.id)
+                return
+            }
+        } catch (_: Exception) {
+        }
+        Toast.makeText(
+            this,
+            "Aucune saisie vocale trouvée. Active « Google Voice Typing » dans les réglages Android.",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
     override fun onNavPanel() {
         if (panel is NavPanel) {
             hidePanel()

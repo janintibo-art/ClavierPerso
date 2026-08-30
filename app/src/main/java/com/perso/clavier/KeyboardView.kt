@@ -40,6 +40,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onAiToggle()
         fun onNavPanel()
         fun onAiFollowUp(instruction: String)
+        fun onDeleteWord()
+        fun onVoiceInput()
         fun onMoveCursor(delta: Int)
         fun onClipboardPanel()
         fun onRewrite()
@@ -138,13 +140,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val effectPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var pressedKey: Key? = null
-    private var instantDone = false
-    private var downX = 0f
-    private var spaceCursor = false
-    private var cursorAnchor = 0f
     private var flashKey: Key? = null
     private var flashUntil = 0L
-    private var longPressConsumed = false
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
 
     init {
@@ -326,7 +323,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = (barHeight() + dp(prefs.keyHeight.toFloat()) * rows().size + dp(12f)).toInt()
+        val h = (barHeight() + dp(prefs.keyHeight.toFloat()) * rows().size +
+                dp(12f) + dp(prefs.bottomPadding.toFloat())).toInt()
         setMeasuredDimension(w, h)
     }
 
@@ -480,9 +478,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         // ---------- Touches ----------
         val rowH = dp(prefs.keyHeight.toFloat())
         val margin = dp(3f)
-        val sidePad = dp(4f)
         val radius = dp(9f)
-        val usable = width - sidePad * 2
+        // Mode une main : le clavier se resserre a gauche ou a droite
+        val hand = prefs.oneHandMode
+        val fullW = width.toFloat()
+        val zoneW = if (hand == 0) fullW else fullW * 0.78f
+        val zoneLeft = when (hand) {
+            1 -> 0f
+            2 -> fullW - zoneW
+            else -> 0f
+        }
+        val sidePad = zoneLeft + dp(4f)
+        val usable = zoneW - dp(8f)
         var y = barHeight() + dp(4f)
 
         val now = System.currentTimeMillis()
@@ -526,6 +533,22 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     sp(prefs.textSize * 0.62f) else sp(prefs.textSize.toFloat())
                 val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
                 canvas.drawText(displayLabel(key), rect.centerX(), ty, textPaint)
+
+                // Petit indice du caractere obtenu par appui long
+                if (prefs.showSecondary && key.code >= 0 && !symbols) {
+                    val sec = Layouts.secondary(key.label)
+                    if (sec != null) {
+                        textPaint.textSize = sp(prefs.textSize * 0.42f)
+                        textPaint.alpha = 130
+                        canvas.drawText(
+                            sec,
+                            rect.right - dp(9f),
+                            rect.top + dp(12f),
+                            textPaint
+                        )
+                        textPaint.alpha = 255
+                    }
+                }
 
                 x += kw
             }
@@ -689,158 +712,205 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         if (alive) postInvalidateDelayed(16)
     }
 
-    private val repeatDelete = object : Runnable {
-        override fun run() {
-            longPressConsumed = true
-            listener.onDelete()
-            handler.postDelayed(this, 60)
+
+
+
+
+
+
+    /** Un doigt en cours d'appui. */
+    private class Pointer(
+        var key: Key,
+        val downX: Float,
+        val downY: Float,
+        val downTime: Long
+    ) {
+        var longPressDone = false
+        var isSpaceCursor = false
+        var cursorAnchor = 0f
+    }
+
+    private val pointers = HashMap<Int, Pointer>()
+
+    private fun delayFor(base: Int, floor: Int): Long {
+        val f = prefs.sensitivity.coerceIn(30, 200) / 100f
+        return (base * f).toLong().coerceAtLeast(floor.toLong())
+    }
+
+    /** Programme l'action d'appui long propre a la touche. */
+    private fun scheduleLongPress(id: Int, key: Key) {
+        cancelLongPress(id)
+        val r: Runnable = when {
+            key.code == CODE_DEL -> Runnable { repeatDeleteFor(id) }
+            key.code == CODE_PASTE -> Runnable { firePointerAction(id) { listener.onClipboardPanel() } }
+            key.code == CODE_SYM -> Runnable { firePointerAction(id) { listener.onNavPanel() } }
+            key.code == CODE_AI -> Runnable { firePointerAction(id) { listener.onAiFollowUp("__complete__") } }
+            key.code == CODE_ENTER -> Runnable { firePointerAction(id) { listener.onRewrite() } }
+            key.code == CODE_SPACE -> Runnable { firePointerAction(id) { listener.onVoiceInput() } }
+            key.code >= 0 -> Runnable { fireLongPressKey(id, key) }
+            else -> return
         }
+        longPressRunnables[id] = r
+        val delay = when (key.code) {
+            CODE_DEL -> delayFor(400, 320)
+            CODE_SPACE -> delayFor(600, 550)
+            else -> delayFor(400, 320)
+        }
+        handler.postDelayed(r, delay)
     }
 
-    private val clipPanelRunnable = Runnable {
-        longPressConsumed = true
-        pressedKey = null
-        invalidate()
-        listener.onClipboardPanel()
+    private val longPressRunnables = HashMap<Int, Runnable>()
+
+    private fun cancelLongPress(id: Int) {
+        longPressRunnables.remove(id)?.let { handler.removeCallbacks(it) }
     }
 
-    private val rewriteRunnable = Runnable {
-        longPressConsumed = true
-        pressedKey = null
+    private fun firePointerAction(id: Int, action: () -> Unit) {
+        val p = pointers[id] ?: return
+        p.longPressDone = true
+        pointers.remove(id)
         invalidate()
-        listener.onRewrite()
+        action()
     }
 
-    private val navPanelRunnable = Runnable {
-        longPressConsumed = true
-        pressedKey = null
+    /**
+     * Appui long sur une lettre : accent si disponible, sinon
+     * le chiffre ou symbole secondaire (comme sur les claviers classiques).
+     */
+    private fun fireLongPressKey(id: Int, key: Key) {
+        val p = pointers[id] ?: return
+        val lang = prefs.langIndex.coerceIn(0, 2)
+        val accent = if (!symbols) Layouts.accents(lang)[key.label] else null
+        val secondary = if (!symbols) Layouts.secondary(key.label) else null
+        val text = accent ?: secondary ?: return
+        p.longPressDone = true
+        val out = if (accent != null && (shift || caps)) text.uppercase() else text
+        listener.onText(out)
+        if (accent != null && shift && !caps) shift = false
+        pointers.remove(id)
         invalidate()
-        listener.onNavPanel()
     }
 
-    private val completeRunnable = Runnable {
-        longPressConsumed = true
-        pressedKey = null
-        invalidate()
-        listener.onAiFollowUp("__complete__")
-    }
-
-    private val accentRunnable = Runnable {
-        val key = pressedKey ?: return@Runnable
-        val acc = Layouts.accents(prefs.langIndex.coerceIn(0, 2))[key.label] ?: return@Runnable
-        longPressConsumed = true
-        val t = if (shift || caps) acc.uppercase() else acc
-        listener.onText(t)
-        if (shift && !caps) shift = false
-        invalidate()
+    /** Suppression repetee ; efface par mot apres un moment. */
+    private fun repeatDeleteFor(id: Int) {
+        val p = pointers[id] ?: return
+        p.longPressDone = true
+        val elapsed = System.currentTimeMillis() - p.downTime
+        if (elapsed > 1600 && prefs.deleteByWord) {
+            listener.onDeleteWord()
+        } else {
+            listener.onDelete()
+        }
+        val next = Runnable { repeatDeleteFor(id) }
+        longPressRunnables[id] = next
+        handler.postDelayed(next, if (elapsed > 1600) 130 else 60)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                val key = keyAt(event.x, event.y) ?: return true
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val i = event.actionIndex
+                val id = event.getPointerId(i)
+                val x = event.getX(i)
+                val y = event.getY(i)
+                val key = keyAt(x, y) ?: return true
+
                 val edit = editModeListener
                 if (edit != null) {
                     pressedKey = key
                     invalidate()
                     return true
                 }
-                pressTimes[key.label] = System.currentTimeMillis()
+
+                val p = Pointer(key, x, y, System.currentTimeMillis())
+                pointers[id] = p
                 pressedKey = key
-                downX = event.x
-                spaceCursor = false
-                longPressConsumed = false
+                pressTimes[key.label] = System.currentTimeMillis()
                 feedback()
-
-                // Delais adaptes a la sensibilite, avec un plancher :
-                // sans lui, une sensibilite elevee transformait un simple appui en appui long.
-                val f = prefs.sensitivity.coerceIn(30, 200) / 100f
-                fun delay(base: Int, floor: Int = 300) = (base * f).toLong().coerceAtLeast(floor.toLong())
-                when {
-                    key.code == CODE_DEL -> handler.postDelayed(repeatDelete, delay(400, 320))
-                    key.code == CODE_PASTE -> handler.postDelayed(clipPanelRunnable, delay(450, 400))
-                    key.code == CODE_SYM -> handler.postDelayed(navPanelRunnable, delay(450, 400))
-                    key.code == CODE_AI -> handler.postDelayed(completeRunnable, delay(500, 450))
-                    key.code == CODE_ENTER -> handler.postDelayed(rewriteRunnable, delay(500, 450))
-                    key.code >= 0 && !symbols &&
-                            Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label) ->
-                        handler.postDelayed(accentRunnable, delay(380, 300))
-                }
-
-                instantDone = false
+                scheduleLongPress(id, key)
                 invalidate()
             }
+
             MotionEvent.ACTION_MOVE -> {
-                // Glisser le doigt change la touche selectionnee, comme sur les
-                // claviers habituels : on peut corriger avant de lever le doigt.
-                val cur = pressedKey
-                if (cur != null && cur.code != CODE_SPACE && !spaceCursor && !longPressConsumed) {
-                    val over = keyAt(event.x, event.y)
-                    if (over != null && over !== cur) {
-                        handler.removeCallbacksAndMessages(null)
-                        pressedKey = over
-                        // Nouvelle touche : on reprogramme ses appuis longs
-                        val f2 = prefs.sensitivity.coerceIn(30, 200) / 100f
-                        when {
-                            over.code == CODE_DEL ->
-                                handler.postDelayed(repeatDelete, (400 * f2).toLong().coerceAtLeast(320))
-                            over.code >= 0 && !symbols &&
-                                    Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(over.label) ->
-                                handler.postDelayed(accentRunnable, (380 * f2).toLong().coerceAtLeast(300))
+                if (editModeListener != null) return true
+                for (i in 0 until event.pointerCount) {
+                    val id = event.getPointerId(i)
+                    val p = pointers[id] ?: continue
+                    val x = event.getX(i)
+                    val y = event.getY(i)
+
+                    // Glissement sur la barre d'espace : deplacement du curseur
+                    if (p.key.code == CODE_SPACE) {
+                        val dx = x - p.downX
+                        val threshold = dp(10f + prefs.sensitivity / 12f)
+                        if (!p.isSpaceCursor && abs(dx) > threshold) {
+                            p.isSpaceCursor = true
+                            cancelLongPress(id)
+                            p.cursorAnchor = x
                         }
+                        if (p.isSpaceCursor) {
+                            val step = dp(11f)
+                            while (x - p.cursorAnchor > step) {
+                                listener.onMoveCursor(1)
+                                p.cursorAnchor += step
+                            }
+                            while (x - p.cursorAnchor < -step) {
+                                listener.onMoveCursor(-1)
+                                p.cursorAnchor -= step
+                            }
+                        }
+                        continue
+                    }
+
+                    if (p.longPressDone) continue
+
+                    // Le doigt glisse vers une autre touche : on suit
+                    val over = keyAt(x, y)
+                    if (over != null && over !== p.key) {
+                        p.key = over
+                        pressedKey = over
+                        scheduleLongPress(id, over)
                         feedback()
                         invalidate()
                     }
                 }
-                if (pressedKey?.code == CODE_SPACE) {
-                    val dx = event.x - downX
-                    val threshold = dp(10f + prefs.sensitivity / 12f)
-                    if (!spaceCursor && abs(dx) > threshold) {
-                        spaceCursor = true
-                        handler.removeCallbacksAndMessages(null)
-                        cursorAnchor = event.x
-                    }
-                    if (spaceCursor) {
-                        val step = dp(11f)
-                        while (event.x - cursorAnchor > step) {
-                            listener.onMoveCursor(1)
-                            cursorAnchor += step
-                        }
-                        while (event.x - cursorAnchor < -step) {
-                            listener.onMoveCursor(-1)
-                            cursorAnchor -= step
-                        }
-                    }
-                }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                val i = event.actionIndex
+                val id = event.getPointerId(i)
+
                 val edit = editModeListener
                 if (edit != null) {
                     val k = pressedKey
                     pressedKey = null
                     invalidate()
-                    if (k != null && event.actionMasked == MotionEvent.ACTION_UP) edit(k.label)
+                    if (k != null && event.actionMasked != MotionEvent.ACTION_CANCEL) edit(k.label)
                     return true
                 }
-                handler.removeCallbacksAndMessages(null)
-                val key = pressedKey
-                pressedKey = null
-                if (key != null) {
+
+                if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    pointers.keys.toList().forEach { cancelLongPress(it) }
+                    pointers.clear()
+                    pressedKey = null
+                    invalidate()
+                    return true
+                }
+
+                cancelLongPress(id)
+                val p = pointers.remove(id)
+                pressedKey = pointers.values.lastOrNull()?.key
+                if (p != null) {
+                    val key = p.key
                     pressTimes[key.label] = System.currentTimeMillis()
-                    flashKey = key
-                    flashUntil = System.currentTimeMillis() + 160
-                    if (event.actionMasked == MotionEvent.ACTION_UP &&
-                        !longPressConsumed && !spaceCursor
-                    ) addRipple(key)
+                    if (!p.longPressDone && !p.isSpaceCursor) {
+                        flashKey = key
+                        flashUntil = System.currentTimeMillis() + 160
+                        addRipple(key)
+                        handleKey(key)
+                    }
                 }
                 invalidate()
-                if (key != null && !longPressConsumed && !spaceCursor && !instantDone &&
-                    event.actionMasked == MotionEvent.ACTION_UP
-                ) {
-                    handleKey(key)
-                }
-                instantDone = false
-                spaceCursor = false
             }
         }
         return true
@@ -884,7 +954,27 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private fun feedback() {
         if (prefs.vibration) {
-            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            val ms = prefs.vibrationMs
+            if (ms <= 0) {
+                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            } else {
+                try {
+                    val v = context.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                    if (android.os.Build.VERSION.SDK_INT >= 26) {
+                        v.vibrate(
+                            android.os.VibrationEffect.createOneShot(
+                                ms.toLong(),
+                                android.os.VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        v.vibrate(ms.toLong())
+                    }
+                } catch (e: Exception) {
+                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+            }
         }
         if (prefs.sound) {
             val type = prefs.soundType
