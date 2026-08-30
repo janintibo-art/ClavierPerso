@@ -242,6 +242,15 @@ class Prefs(context: Context) {
         saveClips(clips().filter { it.second })
     }
 
+    /**
+     * N'afficher le clavier que si l'utilisateur touche vraiment le champ.
+     * Evite qu'il surgisse quand une application donne le focus toute seule
+     * (retour dans Termux, collage, changement d'ecran...).
+     */
+    var showOnlyOnTap: Boolean
+        get() = sp.getBoolean("show_on_tap", true)
+        set(v) { sp.edit().putBoolean("show_on_tap", v).apply() }
+
     /** Appui long sur ⌫ : efface mot par mot apres 1,6 s. */
     var deleteByWord: Boolean
         get() = sp.getBoolean("del_word", true)

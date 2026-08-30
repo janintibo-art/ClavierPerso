@@ -9,6 +9,7 @@ import android.os.Build
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.KeyEvent
+import android.view.inputmethod.InputMethod
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
 import android.widget.Toast
@@ -101,6 +102,19 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboardView = kb
         container = root
         return root
+    }
+
+    /**
+     * Une application peut demander l'affichage du clavier sans que l'utilisateur
+     * l'ait sollicite (retour dans l'app, collage...). Dans ce cas on reste cache,
+     * comme le fait le clavier Samsung.
+     */
+    override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
+        if (prefs().showOnlyOnTap && !configChange) {
+            val explicit = (flags and InputMethod.SHOW_EXPLICIT) != 0
+            if (!explicit) return false
+        }
+        return super.onShowInputRequested(flags, configChange)
     }
 
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {

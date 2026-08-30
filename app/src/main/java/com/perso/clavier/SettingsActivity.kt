@@ -345,6 +345,10 @@ class SettingsActivity : Activity() {
         root.addView(switchRow("Appui long sur ⌫ : effacer mot par mot", prefs.deleteByWord) {
             prefs.deleteByWord = it
         })
+        root.addView(switchRow("N'ouvrir le clavier que si je touche le champ", prefs.showOnlyOnTap) {
+            prefs.showOnlyOnTap = it
+        })
+        root.addView(hint("Évite que le clavier surgisse tout seul en revenant dans une application (Termux, navigateur…)."))
         root.addView(hint("Appui long sur la barre d'espace : dictée vocale 🎤"))
 
         // ----- Confort -----
