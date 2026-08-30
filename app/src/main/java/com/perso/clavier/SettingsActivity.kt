@@ -216,8 +216,13 @@ class SettingsActivity : Activity() {
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.parseColor(Palette.TEXT))
         })
+        val versionName = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (e: Exception) {
+            "?"
+        }
         root.addView(TextView(this).apply {
-            text = "Suggestions, emojis, presse-papiers, 3 langues, et tout est personnalisable"
+            text = "Version " + versionName + " — suggestions, emojis, presse-papiers, IA, et tout est personnalisable"
             textSize = 14f
             setTextColor(Color.parseColor(Palette.TEXT_SOFT))
             setPadding(0, dp(6), 0, dp(16))

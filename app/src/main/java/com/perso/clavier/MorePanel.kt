@@ -37,7 +37,6 @@ class MorePanel(
         val list = LinearLayout(context).apply { orientation = VERTICAL }
         val actions = listOf(
             Triple("GIF", "GIF et recherche", "gif"),
-            Triple("✅", "Correction IA", "fix"),
             Triple("↔", "Navigation / édition", "nav"),
             Triple("🌐", "Changer la langue", "lang"),
             Triple("⚙️", "Réglages", "settings")

@@ -430,6 +430,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             prefs.compactToolbar -> listOf(
                 Key("😀", CODE_EMOJI),
                 Key("📋", CODE_PASTE),
+                Key("✅", CODE_FIX),
                 Key("🤖", CODE_AI),
                 Key("🌍", CODE_TRANSLATE),
                 Key("⋯", CODE_MORE)
@@ -820,6 +821,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         canvas.drawRoundRect(rect, dp(12f), dp(12f), borderPaint)
         borderPaint.style = Paint.Style.FILL
 
+        // Quand le doigt est leve, on signale que le menu attend un choix
+        if (popupPointerId < 0) {
+            textPaint.color = colText()
+            textPaint.textSize = sp(11f)
+            canvas.drawText(
+                "Touche ton choix",
+                rect.centerX(),
+                rect.top - dp(4f),
+                textPaint
+            )
+        }
+
         for ((i, v) in variants.withIndex()) {
             val cell = RectF(
                 rect.left + pad + cellW * i,
@@ -993,6 +1006,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var popupIndex = 0
     private var popupPointerId = -1
     private val popupRects = ArrayList<RectF>()
+    /** Vrai tant que le doigt n'a pas encore parcouru le menu. */
+    private var popupUntouched = true
 
     /** Trace du glissement en cours (coordonnees ecran). */
     private val swipePath = ArrayList<FloatArray>()
@@ -1094,6 +1109,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         popupVariants = variants
         popupIndex = 0
         popupPointerId = id
+        popupUntouched = true
         feedback()
         invalidate()
     }
@@ -1133,6 +1149,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
         if (best >= 0 && best != popupIndex) {
             popupIndex = best
+            popupUntouched = false
             feedback()
             invalidate()
         }
@@ -1160,9 +1177,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val id = event.getPointerId(i)
                 val x = event.getX(i)
                 val y = event.getY(i)
-                // Un nouvel appui ailleurs ferme le menu sans rien ecrire
+                // Menu ouvert : un appui dessus choisit, un appui ailleurs annule
                 if (popupKey != null) {
-                    closePopup(false)
+                    val hit = popupRects.indexOfFirst { it.contains(x, y) }
+                    if (hit >= 0) {
+                        popupIndex = hit
+                        closePopup(true)
+                    } else {
+                        closePopup(false)
+                    }
                     pointers.clear()
                     pressedKey = null
                     return true
@@ -1299,10 +1322,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val i = event.actionIndex
                 val id = event.getPointerId(i)
 
-                // Menu de variantes : on insere le choix en cours
+                // Menu de variantes
                 if (popupKey != null && id == popupPointerId) {
-                    val commit = event.actionMasked != MotionEvent.ACTION_CANCEL
-                    closePopup(commit)
+                    if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                        closePopup(false)
+                    } else if (popupUntouched) {
+                        // Le doigt s'est leve sans parcourir le menu : on le laisse
+                        // ouvert pour que l'utilisateur touche tranquillement son choix.
+                        popupPointerId = -1
+                        invalidate()
+                    } else {
+                        closePopup(true)
+                    }
                     pointers.remove(id)
                     pressedKey = null
                     invalidate()
