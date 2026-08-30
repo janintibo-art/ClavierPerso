@@ -27,3 +27,14 @@ sans qu'il ait vu les autres.
 
 - `versionCode 40`, `versionName 40.0`
 - Aucun changement de format de préférences ni d'indice de thème
+
+## Correction : le menu était masqué par la bulle d'aperçu
+
+La bulle qui agrandit la lettre pressée et le menu de variantes occupent
+exactement la même zone, juste au-dessus de la touche. La bulle étant dessinée
+après le menu, elle le recouvrait entièrement : le menu existait mais restait
+invisible, et l'accent semblait choisi au hasard.
+
+- Le menu de variantes est désormais dessiné en dernier, au-dessus de tout.
+- La bulle d'aperçu est masquée tant qu'un menu est ouvert.
+- Les effets de frappe sont également suspendus pendant l'affichage du menu.

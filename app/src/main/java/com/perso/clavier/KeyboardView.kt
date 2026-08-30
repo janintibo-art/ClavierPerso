@@ -615,13 +615,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             swipePaint.alpha = 255
         }
 
-        drawVariantPopup(canvas)
-
         drawRipples(canvas)
 
-        // Bulle d'apercu au-dessus de la touche pressee
+        // Bulle d'apercu au-dessus de la touche pressee.
+        // Masquee tant qu'un menu de variantes est ouvert : les deux se
+        // superposeraient exactement au meme endroit.
         val pk = pressedKey
-        if (pk != null && pk.code >= 0 && prefs.keyPopup) {
+        if (pk != null && pk.code >= 0 && prefs.keyPopup && popupKey == null) {
             val rect = keyRects.firstOrNull { it.first === pk }?.second
             if (rect != null) {
                 val bw = maxOf(rect.width() * 1.25f, dp(46f))
@@ -639,6 +639,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 canvas.drawText(displayLabel(pk), bubble.centerX(), ty, textPaint)
             }
         }
+
+        // Le menu de variantes se dessine en dernier : rien ne doit le recouvrir.
+        drawVariantPopup(canvas)
 
         if (flashing) {
             postInvalidateDelayed(flashUntil - now + 20)
@@ -904,6 +907,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     /** Dessine les effets de frappe par-dessus les touches. */
     private fun drawRipples(canvas: Canvas) {
         if (ripples.isEmpty()) return
+        // Pendant un menu de variantes, les effets ne doivent pas parasiter la lecture
+        if (popupKey != null) {
+            ripples.clear()
+            return
+        }
         val now = System.currentTimeMillis()
         val duration = prefs.pressEffectDuration.coerceIn(80, 900).toLong()
         val mode = prefs.pressEffect
