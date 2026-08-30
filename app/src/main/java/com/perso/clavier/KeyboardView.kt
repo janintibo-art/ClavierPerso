@@ -486,8 +486,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
         // ---------- Touches ----------
         val rowH = rowHeight()
-        val margin = dp(3f)
-        val radius = dp(9f)
+        val margin = dp(prefs.keySpacing.toFloat())
+        val radius = dp(prefs.cornerRadius.toFloat())
         // Mode une main : le clavier se resserre a gauche ou a droite
         val hand = prefs.oneHandMode
         val fullW = width.toFloat()
@@ -530,8 +530,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val bright = prefs.brightness * prefs.keyBrightness(key.label) / 100
                 base = applyBrightness(base, bright)
 
-                keyPaint.color = withOpacity(base)
-                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+                drawKeyShape(canvas, rect, base, radius, key === pressedKey)
 
                 textPaint.color = when {
                     isAccent -> colTextAccent()
@@ -541,7 +540,19 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 textPaint.textSize = if (key.label.length > 2)
                     sp(prefs.textSize * 0.62f) else sp(prefs.textSize.toFloat())
                 val ty = rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
+
+                // Halo ou ombre sous le texte
+                val glow = prefs.textGlow
+                if (glow > 0) {
+                    textPaint.setShadowLayer(
+                        dp(glow / 12f), 0f, 0f,
+                        if (isAccent) colTextAccent() else colAccent()
+                    )
+                } else if (prefs.textShadow) {
+                    textPaint.setShadowLayer(dp(2f), dp(1f), dp(1.5f), Color.argb(150, 0, 0, 0))
+                }
                 canvas.drawText(displayLabel(key), rect.centerX(), ty, textPaint)
+                if (glow > 0 || prefs.textShadow) textPaint.clearShadowLayer()
 
                 // Petit indice du caractere obtenu par appui long
                 if (prefs.showSecondary && key.code >= 0 && !symbols) {
@@ -616,6 +627,140 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             postInvalidateDelayed(40)
         } else {
             animating = false
+        }
+    }
+
+    /** Eclaircit ou assombrit une couleur (facteur > 1 = plus clair). */
+    private fun shade(color: Int, factor: Float): Int = Color.argb(
+        Color.alpha(color),
+        (Color.red(color) * factor).toInt().coerceIn(0, 255),
+        (Color.green(color) * factor).toInt().coerceIn(0, 255),
+        (Color.blue(color) * factor).toInt().coerceIn(0, 255)
+    )
+
+    /**
+     * Dessine une touche selon le style de relief choisi.
+     * [base] est la couleur de fond deja calculee (theme, RGB, luminosite).
+     */
+    private fun drawKeyShape(canvas: Canvas, rect: RectF, base: Int, radius: Float, pressed: Boolean) {
+        val depth = prefs.reliefDepth.coerceIn(0, 100) / 100f
+        val style = prefs.keyStyle
+
+        when (style) {
+            1 -> { // Ombre portee
+                if (depth > 0f && !pressed) {
+                    val off = dp(1f + 3f * depth)
+                    shadowPaint.color = Color.argb((110 * depth).toInt(), 0, 0, 0)
+                    canvas.drawRoundRect(
+                        RectF(rect.left, rect.top + off, rect.right, rect.bottom + off),
+                        radius, radius, shadowPaint
+                    )
+                }
+                keyPaint.color = withOpacity(base)
+                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+            }
+            2 -> { // Relief 3D : bord clair en haut, sombre en bas
+                val lip = dp(1.5f + 3.5f * depth)
+                keyPaint.color = withOpacity(shade(base, 0.55f))
+                canvas.drawRoundRect(
+                    RectF(rect.left, rect.top + (if (pressed) 0f else lip * 0.4f), rect.right, rect.bottom + lip),
+                    radius, radius, keyPaint
+                )
+                keyPaint.color = withOpacity(base)
+                val top = if (pressed) rect.top + lip * 0.5f else rect.top
+                canvas.drawRoundRect(
+                    RectF(rect.left, top, rect.right, rect.bottom),
+                    radius, radius, keyPaint
+                )
+                // Reflet superieur
+                if (depth > 0.2f && !pressed) {
+                    keyPaint.color = Color.argb((55 * depth).toInt(), 255, 255, 255)
+                    canvas.drawRoundRect(
+                        RectF(rect.left + radius * 0.4f, top + dp(1.5f),
+                            rect.right - radius * 0.4f, top + rect.height() * 0.42f),
+                        radius * 0.7f, radius * 0.7f, keyPaint
+                    )
+                }
+            }
+            3 -> { // Creux : ombre interieure en haut
+                keyPaint.color = withOpacity(shade(base, 0.9f))
+                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+                if (depth > 0f) {
+                    borderPaint.strokeWidth = dp(1f + 2f * depth)
+                    borderPaint.color = Color.argb((90 * depth).toInt(), 0, 0, 0)
+                    canvas.drawArc(
+                        RectF(rect.left + dp(1f), rect.top + dp(1f), rect.right - dp(1f), rect.bottom - dp(1f)),
+                        170f, 200f, false, borderPaint
+                    )
+                    borderPaint.color = Color.argb((70 * depth).toInt(), 255, 255, 255)
+                    canvas.drawArc(
+                        RectF(rect.left + dp(1f), rect.top + dp(1f), rect.right - dp(1f), rect.bottom - dp(1f)),
+                        350f, 200f, false, borderPaint
+                    )
+                }
+            }
+            4 -> { // Contour seul, fond tres discret
+                keyPaint.color = withOpacity(Color.argb(
+                    (55 * (0.4f + depth)).toInt().coerceIn(0, 255),
+                    Color.red(base), Color.green(base), Color.blue(base)
+                ))
+                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+                borderPaint.strokeWidth = dp(1f + 1.5f * depth)
+                borderPaint.color = shade(base, 1.9f)
+                canvas.drawRoundRect(rect, radius, radius, borderPaint)
+            }
+            5 -> { // Verre depoli : fond translucide + liseré clair
+                keyPaint.color = Color.argb(
+                    (150 * (0.4f + depth * 0.6f)).toInt().coerceIn(0, 255),
+                    Color.red(base), Color.green(base), Color.blue(base)
+                )
+                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+                borderPaint.strokeWidth = dp(1f)
+                borderPaint.color = Color.argb((90 * (0.3f + depth)).toInt().coerceIn(0, 255), 255, 255, 255)
+                canvas.drawRoundRect(rect, radius, radius, borderPaint)
+            }
+            6 -> { // Neon : halo colore autour de la touche
+                val glow = shade(colAccent(), 1f)
+                for (i in 3 downTo 1) {
+                    val g = dp(1.5f * i) * (0.4f + depth)
+                    borderPaint.strokeWidth = dp(1.6f)
+                    borderPaint.color = Color.argb(
+                        (34 * depth * (4 - i)).toInt().coerceIn(0, 255),
+                        Color.red(glow), Color.green(glow), Color.blue(glow)
+                    )
+                    canvas.drawRoundRect(
+                        RectF(rect.left - g, rect.top - g, rect.right + g, rect.bottom + g),
+                        radius + g, radius + g, borderPaint
+                    )
+                }
+                keyPaint.color = withOpacity(base)
+                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+                borderPaint.strokeWidth = dp(1.4f)
+                borderPaint.color = glow
+                canvas.drawRoundRect(rect, radius, radius, borderPaint)
+            }
+            else -> { // Plat
+                keyPaint.color = withOpacity(base)
+                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+            }
+        }
+
+        // Degrade vertical facultatif
+        val grad = prefs.gradientStrength
+        if (grad > 0 && style != 4 && style != 5) {
+            keyPaint.color = Color.argb((grad * 0.9f).toInt().coerceIn(0, 255), 255, 255, 255)
+            canvas.drawRoundRect(
+                RectF(rect.left, rect.top, rect.right, rect.top + rect.height() * 0.5f),
+                radius, radius, keyPaint
+            )
+        }
+
+        // Contour personnalise
+        val bw = prefs.borderWidth
+        if (bw > 0) {
+            borderPaint.strokeWidth = dp(bw / 10f)
+            borderPaint.color = if (prefs.borderColor == 0) shade(base, 1.8f) else prefs.borderColor
+            canvas.drawRoundRect(rect, radius, radius, borderPaint)
         }
     }
 
@@ -763,6 +908,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val swipePath = ArrayList<FloatArray>()
     private var swiping = false
     private var swipePointerId = -1
+    private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+    }
+
     private val swipePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND

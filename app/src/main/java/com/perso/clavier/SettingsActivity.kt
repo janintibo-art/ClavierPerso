@@ -440,6 +440,58 @@ class SettingsActivity : Activity() {
         ) { prefs.pressEffectColor = it }
         root.addView(effectColorRow)
 
+        // ----- Relief et forme -----
+        root.addView(section("Relief des touches 🎛️"))
+        root.addView(hint("Le style change tout de suite dans l'aperçu ci-dessus."))
+        root.addView(choiceRow(
+            listOf("Plat", "Ombre", "Relief 3D", "Creux", "Contour", "Verre", "Néon"),
+            prefs.keyStyle, 11f
+        ) {
+            prefs.keyStyle = it
+            preview.refresh()
+        })
+        root.addView(hint("Profondeur de l'effet"))
+        root.addView(seek(0, 100, prefs.reliefDepth) {
+            prefs.reliefDepth = it
+            preview.refresh()
+        })
+
+        root.addView(section("Forme des touches"))
+        root.addView(hint("Arrondi des coins (0 = carré, 30 = pilule)"))
+        root.addView(seek(0, 30, prefs.cornerRadius) {
+            prefs.cornerRadius = it
+            preview.refresh()
+        })
+        root.addView(hint("Espacement entre les touches"))
+        root.addView(seek(0, 10, prefs.keySpacing) {
+            prefs.keySpacing = it
+            preview.refresh()
+        })
+        root.addView(hint("Épaisseur du contour (0 = aucun)"))
+        root.addView(seek(0, 40, prefs.borderWidth) {
+            prefs.borderWidth = it
+            preview.refresh()
+        })
+        root.addView(colorRow("Couleur du contour",
+            { if (prefs.borderColor == 0) prefs.colorAccent else prefs.borderColor }
+        ) { prefs.borderColor = it })
+        root.addView(hint("Dégradé vertical sur les touches"))
+        root.addView(seek(0, 100, prefs.gradientStrength) {
+            prefs.gradientStrength = it
+            preview.refresh()
+        })
+
+        root.addView(section("Style du texte"))
+        root.addView(hint("Halo lumineux autour des lettres (effet néon)"))
+        root.addView(seek(0, 100, prefs.textGlow) {
+            prefs.textGlow = it
+            preview.refresh()
+        })
+        root.addView(switchRow("Ombre portée sous le texte", prefs.textShadow) {
+            prefs.textShadow = it
+            preview.refresh()
+        })
+
         // ----- Luminosite -----
         root.addView(section("Luminosité des touches"))
         root.addView(hint("Assombris ou illumine toutes les touches d'un coup."))

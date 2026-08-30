@@ -141,6 +141,53 @@ class Prefs(context: Context) {
         get() = sp.getInt("press_color", 0)
         set(v) { sp.edit().putInt("press_color", v).apply() }
 
+    // ----- Relief et style des touches -----
+
+    /** 0 = plat, 1 = ombre portee, 2 = relief 3D, 3 = creux, 4 = contour, 5 = verre, 6 = neon */
+    var keyStyle: Int
+        get() = sp.getInt("key_style", 1)
+        set(v) { sp.edit().putInt("key_style", v).apply() }
+
+    /** Intensite de l'effet de relief (0 a 100). */
+    var reliefDepth: Int
+        get() = sp.getInt("relief_depth", 45)
+        set(v) { sp.edit().putInt("relief_depth", v).apply() }
+
+    /** Arrondi des coins des touches, en dp. */
+    var cornerRadius: Int
+        get() = sp.getInt("corner_radius", 9)
+        set(v) { sp.edit().putInt("corner_radius", v).apply() }
+
+    /** Espacement entre les touches, en dp. */
+    var keySpacing: Int
+        get() = sp.getInt("key_spacing", 3)
+        set(v) { sp.edit().putInt("key_spacing", v).apply() }
+
+    /** Epaisseur du contour des touches, en dixiemes de dp (0 = aucun). */
+    var borderWidth: Int
+        get() = sp.getInt("border_width", 0)
+        set(v) { sp.edit().putInt("border_width", v).apply() }
+
+    /** Couleur du contour ; 0 = derivee de la couleur d'accent. */
+    var borderColor: Int
+        get() = sp.getInt("border_color", 0)
+        set(v) { sp.edit().putInt("border_color", v).apply() }
+
+    /** Degrade vertical sur les touches (0 = aucun, 100 = marque). */
+    var gradientStrength: Int
+        get() = sp.getInt("gradient", 0)
+        set(v) { sp.edit().putInt("gradient", v).apply() }
+
+    /** Halo lumineux autour du texte des touches. */
+    var textGlow: Int
+        get() = sp.getInt("text_glow", 0)
+        set(v) { sp.edit().putInt("text_glow", v).apply() }
+
+    /** Ombre portee du texte. */
+    var textShadow: Boolean
+        get() = sp.getBoolean("text_shadow", false)
+        set(v) { sp.edit().putBoolean("text_shadow", v).apply() }
+
     // ----- Mode RGB -----
 
     /** 0 = desactive, 1 = vague arc-en-ciel, 2 = respiration, 3 = reactif a la frappe, 4 = cascade */
