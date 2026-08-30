@@ -18,6 +18,8 @@ import android.os.Looper
 import androidx.core.content.FileProvider
 import java.io.File
 import kotlin.concurrent.thread
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
@@ -29,9 +31,42 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     private var aiUndo: Pair<String, String>? = null
     private var lastAiResult: String? = null
     private var incognito = false
+
+    /**
+     * Le mode prive empeche toujours d'APPRENDRE et de MEMORISER.
+     * Il ne bloque les outils en ligne que si l'utilisateur l'a demande :
+     * une traduction reste une action volontaire de sa part.
+     */
+    private fun onlineBlocked(): Boolean = incognito && prefs().privateBlocksOnline
     private var pendingSmsCode: String? = null
     private var langVotes = 0
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val onlineExecutor = Executors.newFixedThreadPool(3)
+    private val learningExecutor = Executors.newSingleThreadExecutor()
+    private var onlineJob: Future<*>? = null
+    @Volatile private var inputSessionId = 0L
+
+    /**
+     * Une réponse réseau n'a le droit de modifier que le champ dans lequel elle a été lancée.
+     * Un changement de champ/app invalide et annule la tâche précédente.
+     */
+    private fun beginInputSession() {
+        inputSessionId++
+        onlineJob?.cancel(true)
+        onlineJob = null
+    }
+
+    private fun runOnline(work: (Long) -> Unit) {
+        onlineJob?.cancel(true)
+        val session = inputSessionId
+        onlineJob = onlineExecutor.submit { work(session) }
+    }
+
+    private fun postIfCurrent(session: Long, action: () -> Unit) {
+        mainHandler.post {
+            if (session == inputSessionId) action()
+        }
+    }
 
     /**
      * Etat local de la saisie : evite de relire le champ de texte a chaque touche
@@ -46,6 +81,17 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     private var prefsCache: Prefs? = null
 
     private fun prefs(): Prefs = prefsCache ?: Prefs(this).also { prefsCache = it }
+
+    /** Les écritures du modèle personnel ne bloquent jamais le thread de frappe. */
+    private fun learnWordAsync(word: String, previous: String?) {
+        val p = prefs()
+        runCatching { learningExecutor.execute { p.learnWord(word, previous) } }
+    }
+
+    private fun learnTrigramAsync(w1: String, w2: String, next: String) {
+        val p = prefs()
+        runCatching { learningExecutor.execute { p.learnTrigram(w1, w2, next) } }
+    }
 
     /** Resynchronise le buffer avec le vrai contenu du champ. */
     private fun resync() {
@@ -73,19 +119,26 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         hidePanel()
+        beginInputSession()
         super.onFinishInputView(finishingInput)
     }
 
     override fun onDestroy() {
+        beginInputSession()
+        mainHandler.removeCallbacksAndMessages(null)
         try {
             (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                 .removePrimaryClipChangedListener(clipListener)
         } catch (_: Exception) {
         }
+        onlineJob?.cancel(true)
+        onlineExecutor.shutdownNow()
+        learningExecutor.shutdown()
         super.onDestroy()
     }
 
     private fun captureClip() {
+        if (incognito || !prefs().clipboardHistoryEnabled) return
         try {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clip = cm.primaryClip ?: return
@@ -144,6 +197,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        beginInputSession()
         prefsCache = null
         val p = prefs()
 
@@ -156,26 +210,40 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         val type = info?.inputType ?: 0
         val variation = type and android.text.InputType.TYPE_MASK_VARIATION
         val cls = type and android.text.InputType.TYPE_MASK_CLASS
-        incognito = p.incognitoFields && (
+        val noPersonalizedLearning = ((info?.imeOptions ?: 0) and
+                EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
+        incognito = noPersonalizedLearning || (p.incognitoFields && (
                 variation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
                         variation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
                         variation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
                         variation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD ||
                         cls == android.text.InputType.TYPE_CLASS_PHONE
-                )
+                ))
 
-        // Code recu par SMS
-        pendingSmsCode = if (!incognito && p.smsCodeDetection &&
+        // Code recu par SMS : lecture hors du thread UI pour que le clavier s'affiche immédiatement.
+        pendingSmsCode = null
+        if (!incognito && p.smsCodeDetection &&
             checkSelfPermission(android.Manifest.permission.READ_SMS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) SmsCode.latest(this) else null
+        ) {
+            val session = inputSessionId
+            onlineExecutor.submit {
+                val code = try { SmsCode.latest(this) } catch (_: Exception) { null }
+                postIfCurrent(session) {
+                    pendingSmsCode = code
+                    updateSuggestions()
+                }
+            }
+        }
 
         resync()
         hidePanel()
         captureClip()
         keyboardView?.refresh()
-        keyboardView?.translateMode = translateTarget?.second
-        keyboardView?.aiMode = aiMode?.short
+        keyboardView?.privateMode = incognito
+        val hideTools = onlineBlocked()
+        keyboardView?.translateMode = if (hideTools) null else translateTarget?.second
+        keyboardView?.aiMode = if (hideTools) null else aiMode?.short
         keyboardView?.autoShift()
         updateSuggestions()
     }
@@ -214,7 +282,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         showPanel(
             EmojiPanel(
-                this, Prefs(this), panelHeight(),
+                this, Prefs(this), panelHeight(), incognito,
                 onEmoji = { emoji -> currentInputConnection?.commitText(emoji, 1) },
                 onBack = { hidePanel() },
                 onDelete = { onDelete() }
@@ -223,6 +291,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onGifToggle() {
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : GIF réseau désactivés", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (panel is GifPanel) {
             hidePanel()
             return
@@ -238,6 +310,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onTranslateToggle() {
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : traduction réseau désactivée", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (translateTarget != null) {
             translateTarget = null
             keyboardView?.translateMode = null
@@ -278,25 +354,32 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             Toast.makeText(this, "Écris d'abord ton message", Toast.LENGTH_SHORT).show()
             return
         }
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : traduction réseau désactivée", Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, "Traduction…", Toast.LENGTH_SHORT).show()
-        thread {
+        runOnline { session ->
             val result = Translator.translate(prefs(), full, target.first, sourceLang())
-            mainHandler.post {
+            postIfCurrent(session) {
                 if (result == null) {
                     Toast.makeText(
                         this,
                         "Traduction impossible. Ajoute une clé IA ou DeepL dans les réglages.",
                         Toast.LENGTH_LONG
                     ).show()
-                    return@post
+                } else {
+                    val c = currentInputConnection
+                    if (c != null) {
+                        c.beginBatchEdit()
+                        c.deleteSurroundingText(before.length, after.length)
+                        c.commitText(result, 1)
+                        c.endBatchEdit()
+                        Toast.makeText(this, "Traduit via ${Translator.lastProvider}", Toast.LENGTH_SHORT).show()
+                        sendDefaultEditorAction(true)
+                        updateSuggestions()
+                    }
                 }
-                val c = currentInputConnection ?: return@post
-                c.beginBatchEdit()
-                c.deleteSurroundingText(before.length, after.length)
-                c.commitText(result, 1)
-                c.endBatchEdit()
-                sendDefaultEditorAction(true)
-                updateSuggestions()
             }
         }
     }
@@ -308,6 +391,14 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onClipboardPanel() {
+        if (incognito) {
+            Toast.makeText(this, "Mode privé : historique du presse-papiers masqué", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!prefs().clipboardHistoryEnabled) {
+            Toast.makeText(this, "Historique du presse-papiers désactivé", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (panel is ClipboardPanel) {
             hidePanel()
             return
@@ -326,6 +417,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onRewrite() {
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : reformulation IA désactivée", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (panel is RewritePanel) {
             hidePanel()
             return
@@ -349,6 +444,10 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onAiToggle() {
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : assistant IA désactivé", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (aiMode != null) {
             aiMode = null
             keyboardView?.aiMode = null
@@ -388,34 +487,40 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             Toast.makeText(this, "Écris d'abord ta demande", Toast.LENGTH_SHORT).show()
             return
         }
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : assistant IA désactivé", Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, "🤖 " + mode.short + "…", Toast.LENGTH_SHORT).show()
-        thread {
+        runOnline { session ->
             val raw = AiClient.generate(prefs(), mode.system, request)
-            mainHandler.post {
+            postIfCurrent(session) {
                 if (raw == null) {
                     Toast.makeText(
                         this,
                         "Échec de l'IA. Ajoute une clé IA dans les réglages du clavier.",
                         Toast.LENGTH_LONG
                     ).show()
-                    return@post
+                } else {
+                    val result = AiClient.cleanOutput(raw)
+                    if (result.isBlank()) {
+                        Toast.makeText(this, "Réponse vide, réessaie", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val c = currentInputConnection
+                        if (c != null) {
+                            c.beginBatchEdit()
+                            c.deleteSurroundingText(before.length, after.length)
+                            c.commitText(result, 1)
+                            c.endBatchEdit()
+                            aiUndo = request to result
+                            lastAiResult = result
+                            resync()
+                            updateSuggestions()
+                            val via = AiClient.lastProvider.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""
+                            Toast.makeText(this, "Prêt à envoyer$via (⌫ pour annuler)", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
-                val result = AiClient.cleanOutput(raw)
-                if (result.isBlank()) {
-                    Toast.makeText(this, "Réponse vide, réessaie", Toast.LENGTH_SHORT).show()
-                    return@post
-                }
-                val c = currentInputConnection ?: return@post
-                c.beginBatchEdit()
-                c.deleteSurroundingText(before.length, after.length)
-                c.commitText(result, 1)
-                c.endBatchEdit()
-                // Un retour arriere juste apres restaure la demande d'origine
-                aiUndo = request to result
-                lastAiResult = result
-                resync()
-                updateSuggestions()
-                Toast.makeText(this, "Prêt à envoyer (⌫ pour annuler)", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -435,12 +540,13 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         val prev = previousWord()
         val before = ic.getTextBeforeCursor(1, 0)?.toString() ?: ""
-        val prefix = if (before.isNotEmpty() && !before.last().isWhitespace()) " " else ""
+        val prefix = if (composing.isNotEmpty()) ""
+        else if (before.isNotEmpty() && !before.last().isWhitespace()) " " else ""
         ic.beginBatchEdit()
         if (composing.isNotEmpty()) ic.deleteSurroundingText(composing.length, 0)
         ic.commitText(prefix + word + " ", 1)
         ic.endBatchEdit()
-        if (!incognito) prefs().learnWord(word.lowercase(), prev)
+        if (!incognito) learnWordAsync(word.lowercase(), prev)
         composing.setLength(0)
         lastWord = word.lowercase()
         lastAutoCorrect = null
@@ -511,6 +617,27 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         ).show()
     }
 
+    override fun onMoreTools() {
+        if (panel is MorePanel) {
+            hidePanel()
+            return
+        }
+        showPanel(
+            MorePanel(this, prefs(), panelHeight(),
+                onAction = { action ->
+                    hidePanel()
+                    when (action) {
+                        "gif" -> onGifToggle()
+                        "fix" -> onFixSpelling()
+                        "nav" -> onNavPanel()
+                        "lang" -> onLangSwitch()
+                        "settings" -> onSettings()
+                    }
+                },
+                onBack = { hidePanel() })
+        )
+    }
+
     override fun onNavPanel() {
         if (panel is NavPanel) {
             hidePanel()
@@ -575,29 +702,35 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
         val text = (before + after).trim()
         if (text.isEmpty()) return
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : assistant IA désactivé", Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, "🤖 …", Toast.LENGTH_SHORT).show()
-        thread {
+        runOnline { session ->
             val raw = AiClient.generate(
                 prefs(),
                 "Tu retouches un texte. Réponds UNIQUEMENT avec le texte final, " +
                         "sans guillemets ni explication.",
                 instruction + " :\n\n" + text
             )
-            mainHandler.post {
+            postIfCurrent(session) {
                 if (raw == null) {
                     Toast.makeText(this, "Échec de l'IA", Toast.LENGTH_SHORT).show()
-                    return@post
+                } else {
+                    val result = AiClient.cleanOutput(raw)
+                    val c = currentInputConnection
+                    if (c != null) {
+                        c.beginBatchEdit()
+                        c.deleteSurroundingText(before.length, after.length)
+                        c.commitText(result, 1)
+                        c.endBatchEdit()
+                        aiUndo = text to result
+                        lastAiResult = result
+                        resync()
+                        updateSuggestions()
+                    }
                 }
-                val result = AiClient.cleanOutput(raw)
-                val c = currentInputConnection ?: return@post
-                c.beginBatchEdit()
-                c.deleteSurroundingText(before.length, after.length)
-                c.commitText(result, 1)
-                c.endBatchEdit()
-                aiUndo = text to result
-                lastAiResult = result
-                resync()
-                updateSuggestions()
             }
         }
     }
@@ -610,8 +743,12 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             Toast.makeText(this, "Commence ta phrase, puis appui long sur 🤖", Toast.LENGTH_SHORT).show()
             return
         }
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : assistant IA désactivé", Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, "🤖 Je complète…", Toast.LENGTH_SHORT).show()
-        thread {
+        runOnline { session ->
             val raw = AiClient.generate(
                 prefs(),
                 "Tu complètes le texte de l'utilisateur. Réponds UNIQUEMENT avec la SUITE " +
@@ -619,25 +756,30 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
                         "Une à deux phrases maximum, dans la même langue et le même ton.",
                 before
             )
-            mainHandler.post {
+            postIfCurrent(session) {
                 if (raw == null) {
                     Toast.makeText(this, "Échec de l'IA", Toast.LENGTH_SHORT).show()
-                    return@post
+                } else {
+                    var suite = AiClient.cleanOutput(raw)
+                    if (suite.isNotBlank()) {
+                        if (!before.endsWith(" ") && !suite.startsWith(" ") &&
+                            !suite.startsWith(",") && !suite.startsWith(".")
+                        ) suite = " " + suite
+                        currentInputConnection?.commitText(suite, 1)
+                        aiUndo = null
+                        resync()
+                        updateSuggestions()
+                    }
                 }
-                var suite = AiClient.cleanOutput(raw)
-                if (suite.isBlank()) return@post
-                if (!before.endsWith(" ") && !suite.startsWith(" ") &&
-                    !suite.startsWith(",") && !suite.startsWith(".")
-                ) suite = " " + suite
-                currentInputConnection?.commitText(suite, 1)
-                aiUndo = null
-                resync()
-                updateSuggestions()
             }
         }
     }
 
     override fun onFixSpelling() {
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : correction IA désactivée", Toast.LENGTH_SHORT).show()
+            return
+        }
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(4000, 0)?.toString() ?: ""
         val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
@@ -655,25 +797,31 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         val after = ic.getTextAfterCursor(4000, 0)?.toString() ?: ""
         val full = before + after
         if (full.isBlank()) return
+        if (onlineBlocked()) {
+            Toast.makeText(this, "Mode privé : reformulation réseau désactivée", Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, "✨ Reformulation…", Toast.LENGTH_SHORT).show()
-        thread {
+        runOnline { session ->
             val result = Rewriter.rewrite(prefs(), full, instruction)
-            mainHandler.post {
+            postIfCurrent(session) {
                 if (result == null) {
                     val hint = if (AiClient.isConfigured(prefs()))
                         "Échec : vérifie ta clé IA dans les réglages"
                     else
                         "Échec : ajoute une clé IA dans les réglages pour un résultat fiable"
                     Toast.makeText(this, hint, Toast.LENGTH_LONG).show()
-                    return@post
+                } else {
+                    val c = currentInputConnection
+                    if (c != null) {
+                        c.beginBatchEdit()
+                        c.deleteSurroundingText(before.length, after.length)
+                        c.commitText(result, 1)
+                        c.endBatchEdit()
+                        resync()
+                        updateSuggestions()
+                    }
                 }
-                val c = currentInputConnection ?: return@post
-                c.beginBatchEdit()
-                c.deleteSurroundingText(before.length, after.length)
-                c.commitText(result, 1)
-                c.endBatchEdit()
-                resync()
-                updateSuggestions()
             }
         }
     }
@@ -734,6 +882,12 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private fun computeSuggestions() {
         val kb = keyboardView ?: return
+        if (incognito) {
+            kb.suggestions = emptyList()
+            kb.highlightIndex = -1
+            pendingCorrection = null
+            return
+        }
         if (!prefs().suggestionsEnabled) {
             kb.suggestions = emptyList()
             pendingCorrection = null
@@ -828,7 +982,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun learn(word: String) {
         if (incognito) return
         if (word.length >= 2 && word.all { it.isLetter() || it == '\'' }) {
-            prefs().learnWord(word.lowercase(), previousWord())
+            learnWordAsync(word.lowercase(), previousWord())
         }
     }
 
@@ -918,7 +1072,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         if (written.isNotEmpty()) {
             learn(written)
             if (!incognito && wordBeforeLast.isNotEmpty() && lastWord.isNotEmpty()) {
-                p.learnTrigram(wordBeforeLast, lastWord, written.lowercase())
+                learnTrigramAsync(wordBeforeLast, lastWord, written.lowercase())
             }
             wordBeforeLast = lastWord
             lastWord = written.lowercase()
@@ -1025,7 +1179,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
                 ic.deleteSurroundingText(before.length, 0)
                 ic.commitText(raw + " ", 1)
                 ic.endBatchEdit()
-                if (!incognito) prefs().learnWord(raw.lowercase(), lastWord)
+                if (!incognito) learnWordAsync(raw.lowercase(), lastWord)
                 lastWord = raw.lowercase()
                 swipeAlternatives = emptyList()
                 resync()
@@ -1079,13 +1233,11 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         ic.commitText("$word ", 1)
         ic.endBatchEdit()
         if (!incognito) {
-            val p = prefs()
-            p.learnWord(word.lowercase(), prev)
-            p.learnWord(word.lowercase(), prev)
+            learnWordAsync(word.lowercase(), prev)
         }
         composing.setLength(0)
         if (!incognito && wordBeforeLast.isNotEmpty() && lastWord.isNotEmpty()) {
-            prefs().learnTrigram(wordBeforeLast, lastWord, word.lowercase())
+            learnTrigramAsync(wordBeforeLast, lastWord, word.lowercase())
         }
         wordBeforeLast = lastWord
         lastWord = word.lowercase()

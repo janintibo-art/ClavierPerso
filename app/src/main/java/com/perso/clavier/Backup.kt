@@ -8,8 +8,12 @@ object Backup {
 
     private const val VERSION = 1
 
-    /** Cles trop volumineuses ou sans interet pour une sauvegarde. */
-    private val skip = setOf("clips", "recent_emojis")
+    /** Données optionnelles et secrets qui ne doivent jamais sortir dans une sauvegarde normale. */
+    private val optionalSkip = setOf("clips", "recent_emojis")
+    private val alwaysSkip = setOf(
+        // Compatibilité avec d'anciennes v35 : ne jamais exporter une ancienne clé encore en clair.
+        "ai_key", "deepl_key", "gtrans_key", "gif_key"
+    )
 
     fun export(context: Context, includeClips: Boolean = false): String {
         val sp = context.getSharedPreferences("clavier", Context.MODE_PRIVATE)
@@ -18,7 +22,8 @@ object Backup {
         root.put("_app", "Anarchie Clavier")
         val data = JSONObject()
         for ((k, v) in sp.all) {
-            if (k in skip && !includeClips) continue
+            if (k in alwaysSkip) continue
+            if (k in optionalSkip && !includeClips) continue
             when (v) {
                 is String -> data.put(k, v)
                 is Int -> data.put(k, v)
@@ -45,12 +50,21 @@ object Backup {
             val e = sp.edit()
             var n = 0
             for (key in data.keys()) {
-                when (val v = data.get(key)) {
+                val v = data.get(key)
+                if (key in alwaysSkip && v is String) {
+                    // Une ancienne sauvegarde v35 peut contenir les clés : on les migre
+                    // directement vers le stockage Keystore, jamais vers les prefs en clair.
+                    SecretStore.put(context, key, v)
+                    e.remove(key)
+                    n++
+                    continue
+                }
+                when (v) {
                     is String -> e.putString(key, v)
                     is Int -> e.putInt(key, v)
                     is Boolean -> e.putBoolean(key, v)
-                    is Long -> e.putInt(key, v.toInt())
-                    is Double -> e.putInt(key, v.toInt())
+                    is Long -> e.putLong(key, v)
+                    is Double -> e.putFloat(key, v.toFloat())
                     is JSONObject -> {
                         val s = v.optString("_set")
                         if (s.isNotEmpty()) e.putStringSet(key, s.split("\u0001").toSet())
@@ -71,6 +85,6 @@ object Backup {
         val p = Prefs(context)
         return "Thème et couleurs, " + p.shortcuts().size + " raccourcis, " +
                 p.wordCounts().size + " mots appris, " + p.clips().size + " éléments copiés, " +
-                "clés API et toutes les options."
+                "et toutes les options. Les clés API privées ne sont jamais incluses."
     }
 }

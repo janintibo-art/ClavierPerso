@@ -41,7 +41,16 @@ object Themes {
         t("Anarchie", "#0A0A0A", "#1A0E0E", "#140A0A", "#E01B24", "#F5E6E6"),
         t("Gamer RGB", "#08080C", "#14141C", "#0E0E14", "#FF00E5", "#FFFFFF", "#12000F"),
         t("Or noir", "#101010", "#1E1E1E", "#171717", "#D4AF37", "#F5E9C8", "#1A1400"),
-        t("Glace", "#DCE9F5", "#FFFFFF", "#C3D9EC", "#0288D1", "#0A2A42")
+        t("Glace", "#DCE9F5", "#FFFFFF", "#C3D9EC", "#0288D1", "#0A2A42"),
+
+        // Presets v36 : plus sobres, contrastés et cohérents avec l'identité Anarchie.
+        // Ajoutés en fin de liste pour ne pas casser les thèmes déjà associés aux applications.
+        t("Charbon", "#0D0D0F", "#202024", "#17171A", "#D53A43", "#F2F2F3"),
+        t("Béton", "#202124", "#35363A", "#2B2C30", "#C81D25", "#F0F0F0"),
+        t("Terminal", "#050806", "#101713", "#0B110D", "#66FF8A", "#D8FFE1", "#031007"),
+        t("Verre rouge", "#0C0C10", "#26262C", "#1B1B20", "#FF3442", "#F8F8FA"),
+        t("Industriel", "#111214", "#2B2D31", "#202226", "#FFB000", "#F3F3F3", "#231700"),
+        t("Papier noir", "#171513", "#262320", "#201D1B", "#D94747", "#F1E9DF")
     )
 
     fun get(index: Int): Theme = list[index.coerceIn(0, list.size - 1)]

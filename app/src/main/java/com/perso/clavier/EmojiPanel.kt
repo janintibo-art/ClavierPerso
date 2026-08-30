@@ -13,6 +13,7 @@ class EmojiPanel(
     context: Context,
     private val prefs: Prefs,
     panelHeight: Int,
+    private val privateMode: Boolean,
     private val onEmoji: (String) -> Unit,
     private val onBack: () -> Unit,
     private val onDelete: () -> Unit
@@ -177,7 +178,7 @@ class EmojiPanel(
                     layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
                     setPadding(0, dp(8), 0, dp(8))
                     setOnClickListener {
-                        prefs.addRecentEmoji(emoji)
+                        if (!privateMode) prefs.addRecentEmoji(emoji)
                         onEmoji(emoji)
                     }
                 })

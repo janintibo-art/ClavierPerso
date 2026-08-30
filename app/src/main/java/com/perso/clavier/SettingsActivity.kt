@@ -16,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -47,6 +48,7 @@ class SettingsActivity : Activity() {
     private lateinit var appThemesInfo: TextView
     private lateinit var preview: KeyboardView
     private lateinit var testField: EditText
+    private lateinit var settingsScroll: ScrollView
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -103,6 +105,10 @@ class SettingsActivity : Activity() {
 
         override fun onRewrite() {
             Toast.makeText(this@SettingsActivity, "La reformulation IA s'ouvre dans le vrai clavier (appui long sur ⏎)", Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onMoreTools() {
+            Toast.makeText(this@SettingsActivity, "Le menu ⋯ regroupe GIF, correction, navigation, langue et réglages", Toast.LENGTH_SHORT).show()
         }
 
         override fun onFixSpelling() {
@@ -170,7 +176,7 @@ class SettingsActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(28), dp(20), dp(32))
-            setBackgroundColor(Color.parseColor("#F4F5F7"))
+            setBackgroundColor(Color.parseColor("#F2F0F0"))
         }
 
         root.addView(TextView(this).apply {
@@ -190,6 +196,11 @@ class SettingsActivity : Activity() {
             applySimpleMode(it)
         })
         root.addView(hint("En mode simple, la barre du haut ne garde que les émojis, le presse-papiers et les réglages."))
+        root.addView(switchRow("Barre d'outils compacte (menu ⋯)", prefs.compactToolbar) {
+            prefs.compactToolbar = it
+            preview.refresh()
+        })
+        root.addView(hint("En mode complet, garde les actions principales visibles et range GIF, correction, navigation, langue et réglages dans ⋯."))
 
         root.addView(button("① Activer le clavier") {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -197,6 +208,41 @@ class SettingsActivity : Activity() {
         root.addView(button("② Choisir comme clavier par défaut") {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showInputMethodPicker()
+        })
+
+        // Navigation rapide : évite de parcourir toute la page pour atteindre un groupe de réglages.
+        root.addView(section("Navigation rapide"))
+        val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(
+            Triple("🎨 Apparence", "nav_appearance", "Thèmes et rendu"),
+            Triple("⌨️ Frappe", "nav_typing", "Saisie et confort"),
+            Triple("🧠 Intelligence", "nav_intelligence", "Mémoire et assistance"),
+            Triple("✨ Outils", "nav_tools", "IA, GIF et raccourcis"),
+            Triple("🛡 Privé", "nav_privacy", "Données et services")
+        ).forEach { (label, targetTag, description) ->
+            quickRow.addView(TextView(this).apply {
+                text = label
+                contentDescription = description
+                textSize = 13f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                background = rounded(Color.parseColor("#2B2525"), 16)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { rightMargin = dp(7) }
+                setOnClickListener {
+                    val target = root.findViewWithTag<View>(targetTag)
+                    if (target != null && ::settingsScroll.isInitialized) {
+                        settingsScroll.post { settingsScroll.smoothScrollTo(0, (target.top - dp(12)).coerceAtLeast(0)) }
+                    }
+                }
+            })
+        }
+        root.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(quickRow)
         })
 
         // ----- Aperçu en direct -----
@@ -226,7 +272,7 @@ class SettingsActivity : Activity() {
         preview.highlightIndex = 1
 
         // ----- Thèmes prédéfinis -----
-        root.addView(section("Thèmes prédéfinis (${Themes.list.size})"))
+        root.addView(section("Thèmes prédéfinis (${Themes.list.size})").apply { tag = "nav_appearance" })
         root.addView(hint("Un thème remplit les couleurs, que tu peux ensuite modifier une par une plus bas."))
         themesContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(themesContainer)
@@ -277,7 +323,7 @@ class SettingsActivity : Activity() {
         })
 
         // ----- Langue -----
-        root.addView(section("Langue du clavier"))
+        root.addView(section("Langue du clavier").apply { tag = "nav_typing" })
         val langRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         Layouts.languages.forEachIndexed { index, name ->
             langRow.addView(TextView(this).apply {
@@ -286,7 +332,7 @@ class SettingsActivity : Activity() {
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.langIndex) "#4A6CF7" else "#9AA0A6"))
+                background = rounded(Color.parseColor(if (index == prefs.langIndex) "#C81D25" else "#9AA0A6"))
                 setPadding(dp(8), dp(10), dp(8), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(8)
@@ -296,7 +342,7 @@ class SettingsActivity : Activity() {
                     preview.refresh()
                     for (i in 0 until langRow.childCount) {
                         (langRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"))
+                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"))
                     }
                 }
             })
@@ -341,9 +387,15 @@ class SettingsActivity : Activity() {
 
         // ----- Sensibilite -----
         root.addView(section("Sensibilité du clavier ⚡"))
+        root.addView(switchRow("Frappe instantanée (lettre dès le contact)", prefs.instantKey) {
+            prefs.instantKey = it
+            preview.refresh()
+        })
         root.addView(hint(
-            "Comme sur un clavier classique, la lettre s'écrit quand tu lèves le doigt : " +
-                    "tu peux glisser vers une touche voisine pour corriger avant de lâcher."
+            if (prefs.instantKey)
+                "Mode instantané actif : la touche part dès le contact. Le swipe reste compatible."
+            else
+                "Mode classique : la lettre s'écrit quand tu lèves le doigt, ce qui permet de corriger un léger décalage avant de lâcher."
         ))
         root.addView(hint("Réactivité : à gauche = très rapide (appuis longs plus courts), à droite = plus tolérant"))
         root.addView(seek(30, 200, prefs.sensitivity) {
@@ -413,7 +465,7 @@ class SettingsActivity : Activity() {
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.pressEffect) "#4A6CF7" else "#9AA0A6"), 10)
+                background = rounded(Color.parseColor(if (index == prefs.pressEffect) "#C81D25" else "#9AA0A6"), 10)
                 setPadding(dp(2), dp(10), dp(2), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(4)
@@ -423,7 +475,7 @@ class SettingsActivity : Activity() {
                     preview.refresh()
                     for (i in 0 until effectRow.childCount) {
                         (effectRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"), 10)
+                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"), 10)
                     }
                 }
             })
@@ -512,7 +564,7 @@ class SettingsActivity : Activity() {
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.rgbMode) "#4A6CF7" else "#9AA0A6"), 10)
+                background = rounded(Color.parseColor(if (index == prefs.rgbMode) "#C81D25" else "#9AA0A6"), 10)
                 setPadding(dp(4), dp(10), dp(4), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(5)
@@ -522,7 +574,7 @@ class SettingsActivity : Activity() {
                     preview.refresh()
                     for (i in 0 until rgbRow.childCount) {
                         (rgbRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"), 10)
+                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"), 10)
                     }
                 }
             })
@@ -556,7 +608,7 @@ class SettingsActivity : Activity() {
             } else {
                 preview.editModeListener = null
                 editBtn.text = "✏️ Activer le mode édition"
-                editBtn.background = rounded(Color.parseColor("#4A6CF7"))
+                editBtn.background = rounded(Color.parseColor("#C81D25"))
             }
         }
         root.addView(editBtn)
@@ -567,7 +619,7 @@ class SettingsActivity : Activity() {
         })
 
         // ----- Memoire du clavier -----
-        root.addView(section("Mémoire du clavier 🧠"))
+        root.addView(section("Mémoire du clavier 🧠").apply { tag = "nav_intelligence" })
         val memoryInfo = TextView(this).apply {
             textSize = 13f
             setTextColor(Color.parseColor("#5F6368"))
@@ -651,7 +703,31 @@ class SettingsActivity : Activity() {
         root.addView(switchRow("Mode privé dans les champs sensibles", prefs.incognitoFields) {
             prefs.incognitoFields = it
         })
-        root.addView(hint("Mode privé : aucun mot appris ni suggéré dans les champs mot de passe et numéros."))
+        root.addView(hint("Mode privé : aucun mot appris ni suggéré et historique du presse-papiers masqué, dans les champs mot de passe ou demandant de ne pas personnaliser la saisie."))
+        root.addView(switchRow("En mode privé, bloquer aussi IA, traduction et GIF", prefs.privateBlocksOnline) {
+            prefs.privateBlocksOnline = it
+        })
+        root.addView(hint("Désactivé : tu peux toujours traduire ou corriger si tu le demandes toi-même — rien n'est mémorisé pour autant. Activé : plus aucune requête réseau dans ces champs."))
+
+        root.addView(section("Confidentialité & presse-papiers 🛡").apply { tag = "nav_privacy" })
+        root.addView(switchRow("Conserver un historique du presse-papiers", prefs.clipboardHistoryEnabled) {
+            prefs.clipboardHistoryEnabled = it
+        })
+        root.addView(hint("Le collage normal reste disponible même si l'historique est désactivé. Les éléments épinglés sont conservés jusqu'à suppression manuelle."))
+        val clipExpiryValues = listOf(1, 24, 168, 0)
+        val clipExpiryIndex = clipExpiryValues.indexOf(prefs.clipboardExpireHours).let { if (it < 0) 1 else it }
+        root.addView(hint("Expiration des éléments non épinglés"))
+        root.addView(choiceRow(listOf("1 h", "24 h", "7 jours", "Jamais"), clipExpiryIndex, 12f) {
+            prefs.clipboardExpireHours = clipExpiryValues[it]
+        })
+        root.addView(button("🧹 Effacer l'historique non épinglé") {
+            prefs.clearUnpinnedClips()
+            Toast.makeText(this, "Historique non épinglé effacé", Toast.LENGTH_SHORT).show()
+        })
+        root.addView(switchRow("Autoriser les services web publics de secours", prefs.allowPublicFallbacks) {
+            prefs.allowPublicFallbacks = it
+        })
+        root.addView(hint("Si désactivé, l'IA et la traduction utilisent uniquement les services pour lesquels tu as configuré une clé personnelle. Aucun fallback public (Pollinations, Google public, Lingva, MyMemory) n'est utilisé."))
         root.addView(hint("Appui long sur ?123 : pavé de navigation (flèches, annuler, copier, coller).\nAppui long sur 🤖 : l'IA complète ta phrase."))
 
         // ----- Sauvegarde -----
@@ -663,7 +739,7 @@ class SettingsActivity : Activity() {
             startActivityForResult(Intent.createChooser(intent, "Choisir la sauvegarde"), PICK_BACKUP)
         })
 
-        root.addView(section("Raccourcis texte"))
+        root.addView(section("Raccourcis texte").apply { tag = "nav_tools" })
         root.addView(hint("Tape le raccourci puis espace : il est remplace par le texte complet. Exemple : slt -> Salut, ca va ?"))
         shortcutsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(shortcutsContainer)
@@ -685,7 +761,7 @@ class SettingsActivity : Activity() {
             "Astuce : une clé qui commence par gsk_ vient de Groq, xai- vient de xAI Grok, " +
                     "sk- de OpenAI. Utilise le bouton ci-dessous pour remplir URL et modèle."
         ))
-        root.addView(keyField("Clé IA", prefs.aiKey) { prefs.aiKey = it })
+        root.addView(secretKeyField("Clé IA", prefs.aiKey) { prefs.aiKey = it })
         root.addView(keyField("URL de l'API IA", prefs.aiBaseUrl) { prefs.aiBaseUrl = it })
         root.addView(keyField("Modèle IA", prefs.aiModel) { prefs.aiModel = it })
         root.addView(hint(
@@ -706,8 +782,8 @@ class SettingsActivity : Activity() {
                     "la traduction marche déjà. Les deux champs ci-dessous sont facultatifs " +
                     "(DeepL est gratuit jusqu'à 500 000 caractères par mois sur deepl.com/pro-api)."
         ))
-        root.addView(keyField("Clé DeepL (optionnelle)", prefs.deeplKey) { prefs.deeplKey = it })
-        root.addView(keyField("Clé Google Traduction (optionnelle)", prefs.googleTranslateKey) {
+        root.addView(secretKeyField("Clé DeepL (optionnelle)", prefs.deeplKey) { prefs.deeplKey = it })
+        root.addView(secretKeyField("Clé Google Traduction (optionnelle)", prefs.googleTranslateKey) {
             prefs.googleTranslateKey = it
         })
         root.addView(button("🧪 Tester la traduction") {
@@ -731,7 +807,7 @@ class SettingsActivity : Activity() {
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.gifProvider) "#4A6CF7" else "#9AA0A6"))
+                background = rounded(Color.parseColor(if (index == prefs.gifProvider) "#C81D25" else "#9AA0A6"))
                 setPadding(dp(8), dp(10), dp(8), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(8)
@@ -740,13 +816,13 @@ class SettingsActivity : Activity() {
                     prefs.gifProvider = index
                     for (i in 0 until gifRow.childCount) {
                         (gifRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#4A6CF7" else "#9AA0A6"))
+                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"))
                     }
                 }
             })
         }
         root.addView(gifRow)
-        root.addView(keyField("Clé GIF", prefs.gifKey) { prefs.gifKey = it })
+        root.addView(secretKeyField("Clé GIF", prefs.gifKey) { prefs.gifKey = it })
         root.addView(button("🧪 Tester les GIF") {
             Thread {
                 val r = GifProvider.test(Prefs(this))
@@ -766,13 +842,13 @@ class SettingsActivity : Activity() {
             preview.refresh()
         })
 
-        val scroll = ScrollView(this)
-        scroll.addView(root)
-        setContentView(scroll)
+        settingsScroll = ScrollView(this)
+        settingsScroll.addView(root)
+        setContentView(settingsScroll)
 
         if (prefs.firstRun) {
             prefs.firstRun = false
-            scroll.post { welcomeDialog() }
+            settingsScroll.post { welcomeDialog() }
         }
     }
 
@@ -859,7 +935,7 @@ class SettingsActivity : Activity() {
                     setTypeface(typeface, Typeface.BOLD)
                     setTextColor(Color.WHITE)
                     background = rounded(
-                        Color.parseColor(if (index == selected) "#4A6CF7" else "#9AA0A6"), 10
+                        Color.parseColor(if (index == selected) "#C81D25" else "#9AA0A6"), 10
                     )
                     setPadding(dp(3), dp(10), dp(3), dp(10))
                     val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -869,7 +945,7 @@ class SettingsActivity : Activity() {
                         onPick(index)
                         buttons.forEachIndexed { j, b ->
                             b.background = rounded(
-                                Color.parseColor(if (j == index) "#4A6CF7" else "#9AA0A6"), 10
+                                Color.parseColor(if (j == index) "#C81D25" else "#9AA0A6"), 10
                             )
                         }
                     }
@@ -1178,6 +1254,17 @@ class SettingsActivity : Activity() {
             })
         }
 
+    private fun secretKeyField(label: String, value: String, onChange: (String) -> Unit): EditText =
+        keyField(label, value, onChange).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            transformationMethod = android.text.method.PasswordTransformationMethod.getInstance()
+            setSelection(text.length)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+            }
+        }
+
     private fun section(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 17f
@@ -1199,7 +1286,7 @@ class SettingsActivity : Activity() {
         gravity = Gravity.CENTER
         setTextColor(Color.WHITE)
         setTypeface(typeface, Typeface.BOLD)
-        background = rounded(Color.parseColor("#4A6CF7"))
+        background = rounded(Color.parseColor("#C81D25"))
         setPadding(dp(16), dp(14), dp(16), dp(14))
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1363,7 +1450,7 @@ class SettingsActivity : Activity() {
                 text = key
                 textSize = 15f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#4A6CF7"))
+                setTextColor(Color.parseColor("#C81D25"))
             })
             row.addView(TextView(this).apply {
                 text = "  ->  " + value

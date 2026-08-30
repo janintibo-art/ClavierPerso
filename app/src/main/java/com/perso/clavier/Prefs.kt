@@ -7,7 +7,8 @@ import org.json.JSONObject
 
 class Prefs(context: Context) {
 
-    private val sp = context.getSharedPreferences("clavier", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val sp = appContext.getSharedPreferences("clavier", Context.MODE_PRIVATE)
 
     companion object {
         /** Caches partages : evitent de relire et reparser le JSON a chaque touche. */
@@ -22,29 +23,29 @@ class Prefs(context: Context) {
         }
     }
 
-    // ----- Couleurs personnalisées (défaut : thème Sombre) -----
+    // ----- Couleurs personnalisées (défaut v36 : thème Anarchie) -----
 
     private fun getC(key: String, def: String) = sp.getInt(key, Color.parseColor(def))
     private fun setC(key: String, v: Int) = sp.edit().putInt(key, v).apply()
 
     var colorBg: Int
-        get() = getC("c_bg", "#1F2227")
+        get() = getC("c_bg", "#0A0A0A")
         set(v) = setC("c_bg", v)
 
     var colorKey: Int
-        get() = getC("c_key", "#33373E")
+        get() = getC("c_key", "#1A0E0E")
         set(v) = setC("c_key", v)
 
     var colorSpecial: Int
-        get() = getC("c_special", "#282C33")
+        get() = getC("c_special", "#140A0A")
         set(v) = setC("c_special", v)
 
     var colorAccent: Int
-        get() = getC("c_accent", "#4A6CF7")
+        get() = getC("c_accent", "#E01B24")
         set(v) = setC("c_accent", v)
 
     var colorText: Int
-        get() = getC("c_text", "#E8EAED")
+        get() = getC("c_text", "#F5E6E6")
         set(v) = setC("c_text", v)
 
     var colorTextOnAccent: Int
@@ -249,46 +250,79 @@ class Prefs(context: Context) {
 
     // ----- Historique du presse-papiers -----
 
-    fun clips(): List<Pair<String, Boolean>> {
+    /** L'historique peut être totalement désactivé, sans empêcher le collage normal. */
+    var clipboardHistoryEnabled: Boolean
+        get() = sp.getBoolean("clipboard_history", true)
+        set(v) {
+            sp.edit().putBoolean("clipboard_history", v).apply()
+            if (!v) clearUnpinnedClips()
+        }
+
+    /** Durée de conservation des éléments non épinglés : 0 = jamais, sinon en heures. */
+    var clipboardExpireHours: Int
+        get() = sp.getInt("clipboard_expire_h", 24)
+        set(v) { sp.edit().putInt("clipboard_expire_h", v.coerceAtLeast(0)).apply() }
+
+    private data class ClipEntry(val text: String, val pinned: Boolean, val time: Long)
+
+    private fun clipEntries(prune: Boolean = true): List<ClipEntry> {
         return try {
             val arr = JSONArray(sp.getString("clips", "[]") ?: "[]")
-            val out = ArrayList<Pair<String, Boolean>>()
+            val out = ArrayList<ClipEntry>()
+            val now = System.currentTimeMillis()
+            val maxAge = clipboardExpireHours.takeIf { it > 0 }?.toLong()?.times(60L * 60L * 1000L)
+            var changed = false
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                out.add(o.getString("t") to o.optBoolean("p", false))
+                val text = o.optString("t")
+                if (text.isBlank()) continue
+                val pinned = o.optBoolean("p", false)
+                val time = o.optLong("ts", now)
+                val expired = !pinned && maxAge != null && now - time > maxAge
+                if (prune && expired) {
+                    changed = true
+                    continue
+                }
+                out.add(ClipEntry(text, pinned, time))
             }
+            if (changed) saveClipEntries(out)
             out
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
 
-    private fun saveClips(list: List<Pair<String, Boolean>>) {
+    fun clips(): List<Pair<String, Boolean>> =
+        clipEntries().map { it.text to it.pinned }
+
+    private fun saveClipEntries(list: List<ClipEntry>) {
         val arr = JSONArray()
-        list.forEach { (t, pin) ->
-            arr.put(JSONObject().put("t", t).put("p", pin))
+        list.forEach { e ->
+            arr.put(JSONObject().put("t", e.text).put("p", e.pinned).put("ts", e.time))
         }
         sp.edit().putString("clips", arr.toString()).apply()
     }
 
     fun addClip(text: String) {
-        if (text.isBlank() || text.length > 5000) return
-        val list = clips().toMutableList()
-        val existing = list.firstOrNull { it.first == text }
-        val pinned = existing?.second ?: false
-        list.removeAll { it.first == text }
-        list.add(0, text to pinned)
-        val pins = list.filter { it.second }
-        val others = list.filter { !it.second }.take(20)
-        saveClips(pins + others)
+        if (!clipboardHistoryEnabled || text.isBlank() || text.length > 5000) return
+        val list = clipEntries().toMutableList()
+        val existing = list.firstOrNull { it.text == text }
+        val pinned = existing?.pinned ?: false
+        list.removeAll { it.text == text }
+        list.add(0, ClipEntry(text, pinned, System.currentTimeMillis()))
+        val pins = list.filter { it.pinned }
+        val others = list.filter { !it.pinned }.take(20)
+        saveClipEntries(pins + others)
     }
 
     fun togglePinClip(text: String) {
-        saveClips(clips().map { if (it.first == text) it.first to !it.second else it })
+        saveClipEntries(clipEntries().map {
+            if (it.text == text) it.copy(pinned = !it.pinned) else it
+        })
     }
 
     fun clearUnpinnedClips() {
-        saveClips(clips().filter { it.second })
+        saveClipEntries(clipEntries(prune = false).filter { it.pinned })
     }
 
     /**
@@ -350,6 +384,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("simple_mode", false)
         set(v) { sp.edit().putBoolean("simple_mode", v).apply() }
 
+    /** Barre du haut limitée aux actions principales, le reste passe dans ⋯. */
+    var compactToolbar: Boolean
+        get() = sp.getBoolean("compact_toolbar", true)
+        set(v) { sp.edit().putBoolean("compact_toolbar", v).apply() }
+
     /** Premier lancement : pour proposer l'assistant de configuration. */
     var firstRun: Boolean
         get() = sp.getBoolean("first_run", true)
@@ -406,9 +445,24 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("auto_lang", false)
         set(v) { sp.edit().putBoolean("auto_lang", v).apply() }
 
+    /**
+     * En mode prive, bloquer aussi les outils en ligne demandes explicitement
+     * (IA, traduction, GIF). Desactive par defaut : ne rien APPRENDRE est
+     * indispensable, mais refuser une action que l'utilisateur demande lui-meme
+     * est une gene inutile.
+     */
+    var privateBlocksOnline: Boolean
+        get() = sp.getBoolean("private_blocks_online", false)
+        set(v) { sp.edit().putBoolean("private_blocks_online", v).apply() }
+
     var incognitoFields: Boolean
         get() = sp.getBoolean("incognito", true)
         set(v) { sp.edit().putBoolean("incognito", v).apply() }
+
+    /** Autorise les services web publics de secours quand aucune clé personnelle ne répond. */
+    var allowPublicFallbacks: Boolean
+        get() = sp.getBoolean("public_fallbacks", true)
+        set(v) { sp.edit().putBoolean("public_fallbacks", v).apply() }
 
     /** Emojis recemment utilises, du plus recent au plus ancien. */
     fun recentEmojis(): List<String> =
@@ -426,8 +480,8 @@ class Prefs(context: Context) {
 
     /** Cle IA (compatible OpenAI, Groq, Mistral, OpenRouter...). */
     var aiKey: String
-        get() = sp.getString("ai_key", "") ?: ""
-        set(v) { sp.edit().putString("ai_key", v.trim()).apply() }
+        get() = SecretStore.getOrMigrate(appContext, "ai_key", "ai_key")
+        set(v) { SecretStore.put(appContext, "ai_key", v) }
 
     var aiBaseUrl: String
         get() = sp.getString("ai_base", "https://api.openai.com/v1") ?: "https://api.openai.com/v1"
@@ -438,12 +492,12 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putString("ai_model", v.trim()).apply() }
 
     var deeplKey: String
-        get() = sp.getString("deepl_key", "") ?: ""
-        set(v) { sp.edit().putString("deepl_key", v.trim()).apply() }
+        get() = SecretStore.getOrMigrate(appContext, "deepl_key", "deepl_key")
+        set(v) { SecretStore.put(appContext, "deepl_key", v) }
 
     var googleTranslateKey: String
-        get() = sp.getString("gtrans_key", "") ?: ""
-        set(v) { sp.edit().putString("gtrans_key", v.trim()).apply() }
+        get() = SecretStore.getOrMigrate(appContext, "gtrans_key", "gtrans_key")
+        set(v) { SecretStore.put(appContext, "gtrans_key", v) }
 
     /** 0 = Giphy, 1 = Klipy (Tenor a ferme le 30 juin 2026). */
     var gifProvider: Int
@@ -451,8 +505,8 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putInt("gif_provider", v).apply() }
 
     var gifKey: String
-        get() = sp.getString("gif_key", "") ?: ""
-        set(v) { sp.edit().putString("gif_key", v.trim()).apply() }
+        get() = SecretStore.getOrMigrate(appContext, "gif_key", "gif_key")
+        set(v) { SecretStore.put(appContext, "gif_key", v) }
 
     var keyPopup: Boolean
         get() = sp.getBoolean("key_popup", true)

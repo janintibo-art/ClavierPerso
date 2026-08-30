@@ -11,6 +11,9 @@ import java.net.URL
  */
 object AiClient {
 
+    @Volatile var lastProvider: String = ""
+        private set
+
     fun isConfigured(prefs: Prefs): Boolean = prefs.aiKey.isNotBlank()
 
     /** Envoie une consigne et renvoie la reponse texte, ou null en cas d'echec. */
@@ -49,7 +52,12 @@ object AiClient {
             val choices = json.optJSONArray("choices") ?: return null
             if (choices.length() == 0) return null
             val msg = choices.getJSONObject(0).optJSONObject("message") ?: return null
-            msg.optString("content").trim().trim('"').ifEmpty { null }
+            val out = msg.optString("content").trim().trim('"').ifEmpty { null }
+            if (out != null) {
+                lastProvider = try { URL(base).host.ifBlank { "API IA configurée" } }
+                catch (_: Exception) { "API IA configurée" }
+            }
+            out
         } catch (e: Exception) {
             null
         }
@@ -61,6 +69,7 @@ object AiClient {
      */
     fun generate(prefs: Prefs, system: String, user: String): String? {
         ask(prefs, system, user)?.let { return it }
+        if (!prefs.allowPublicFallbacks) return null
         return try {
             val prompt = system + "\n\n" + user
             val url = "https://text.pollinations.ai/" +
@@ -74,7 +83,9 @@ object AiClient {
             val out = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() } ?: ""
             conn.disconnect()
-            if (code !in 200..299) null else out.trim().ifEmpty { null }
+            if (code !in 200..299) null else out.trim().ifEmpty { null }?.also {
+                lastProvider = "Pollinations (public)"
+            }
         } catch (e: Exception) {
             null
         }

@@ -8,6 +8,9 @@ import java.net.URLEncoder
 
 object Translator {
 
+    @Volatile var lastProvider: String = ""
+        private set
+
     val languages = listOf(
         "fr" to "Français", "en" to "English", "es" to "Español", "de" to "Deutsch",
         "it" to "Italiano", "pt" to "Português", "nl" to "Nederlands", "pl" to "Polski",
@@ -51,29 +54,36 @@ object Translator {
                         "Réponds UNIQUEMENT avec la traduction, sans guillemets ni commentaire.",
                 trimmed
             )
-            if (!out.isNullOrBlank()) return out
+            if (!out.isNullOrBlank()) {
+                lastProvider = AiClient.lastProvider.ifBlank { "IA configurée" }
+                return out
+            }
         }
 
         // 2. DeepL (si cle renseignee)
         if (prefs.deeplKey.isNotBlank()) {
             try {
                 val r = deepl(prefs.deeplKey.trim(), trimmed, target)
-                if (r != null) return r
+                if (r != null) { lastProvider = "DeepL"; return r }
             } catch (_: Exception) {
             }
         }
 
-        // 3. Google (cle officielle si fournie, sinon point d'acces public)
+        // 3. Google officiel si une clé personnelle est fournie
         if (prefs.googleTranslateKey.isNotBlank()) {
             try {
                 val r = googleOfficial(prefs.googleTranslateKey.trim(), trimmed, target)
-                if (r != null) return r
+                if (r != null) { lastProvider = "Google Traduction (clé)"; return r }
             } catch (_: Exception) {
             }
         }
+
+        // Les services ci-dessous sont publics : ils ne sont utilisés que si l'utilisateur l'autorise.
+        if (!prefs.allowPublicFallbacks) return null
+
         try {
             val r = googlePublic(trimmed, target)
-            if (r != null) return r
+            if (r != null) { lastProvider = "Google public"; return r }
         } catch (_: Exception) {
         }
 
@@ -81,12 +91,14 @@ object Translator {
         for (host in listOf("lingva.ml", "lingva.lunar.icu", "translate.plausibility.cloud")) {
             try {
                 val r = lingva(host, trimmed, target, sourceHint)
-                if (r != null) return r
+                if (r != null) { lastProvider = "Lingva ($host)"; return r }
             } catch (_: Exception) {
             }
         }
         try {
-            return mymemory(trimmed, target, sourceHint)
+            val r = mymemory(trimmed, target, sourceHint)
+            if (r != null) lastProvider = "MyMemory (public)"
+            return r
         } catch (_: Exception) {
         }
         return null
@@ -167,6 +179,14 @@ object Translator {
         if (prefs.deeplKey.isNotBlank()) {
             sb.append(if (runCatching { deepl(prefs.deeplKey.trim(), "bonjour", "en") }.getOrNull() != null)
                 "DeepL : ✅\n" else "DeepL : ❌\n")
+        }
+        if (prefs.googleTranslateKey.isNotBlank()) {
+            sb.append(if (runCatching { googleOfficial(prefs.googleTranslateKey.trim(), "bonjour", "en") }.getOrNull() != null)
+                "Google Traduction (clé) : ✅\n" else "Google Traduction (clé) : ❌\n")
+        }
+        if (!prefs.allowPublicFallbacks) {
+            sb.append("Services publics de secours : désactivés")
+            return sb.toString().trimEnd()
         }
         sb.append(if (runCatching { googlePublic("bonjour", "en") }.getOrNull() != null)
             "Google public : ✅\n" else "Google public : ❌\n")

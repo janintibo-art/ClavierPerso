@@ -12,9 +12,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlin.concurrent.thread
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Panneau GIF. Il s'affiche AU-DESSUS du clavier : celui-ci reste utilisable
@@ -38,6 +40,8 @@ class GifPanel(
     }
 
     private val query = StringBuilder()
+    private val worker = Executors.newFixedThreadPool(4)
+    private val searchSeq = AtomicInteger(0)
 
     private val categories = listOf(
         "🔥 Tendances" to "", "😂 Rire" to "rire", "❤️ Amour" to "amour",
@@ -162,40 +166,65 @@ class GifPanel(
 
     // ---------- Reseau ----------
 
-    private fun fetchBytes(url: String): ByteArray {
+    private fun fetchBytes(url: String, maxBytes: Int): ByteArray {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 10000
         conn.readTimeout = 15000
         conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
-        return conn.inputStream.readBytes().also { conn.disconnect() }
+        try {
+            val announced = conn.contentLengthLong
+            if (announced > maxBytes) throw IllegalStateException("Fichier trop volumineux")
+            val out = ByteArrayOutputStream(minOf(maxBytes, 512 * 1024))
+            conn.inputStream.use { input ->
+                val buf = ByteArray(16 * 1024)
+                var total = 0
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    total += n
+                    if (total > maxBytes) throw IllegalStateException("Fichier trop volumineux")
+                    out.write(buf, 0, n)
+                }
+            }
+            return out.toByteArray()
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun search(q: String) {
-        if (prefs.gifKey.isBlank()) {
-            status.text = "Ajoute une clé GIF gratuite dans les réglages (section GIF)."
-            return
-        }
+        val seq = searchSeq.incrementAndGet()
         status.text = "Chargement…"
-        thread {
+        worker.submit {
+            // La cle est dechiffree via Keystore : on la lit hors du thread principal.
+            if (prefs.gifKey.isBlank()) {
+                main.post {
+                    if (seq == searchSeq.get() && isAttachedToWindow) {
+                        status.text = "Ajoute une clé GIF gratuite dans les réglages (section GIF)."
+                    }
+                }
+                return@submit
+            }
             val items = try {
                 GifProvider.search(prefs, q)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
             main.post {
+                if (seq != searchSeq.get() || !isAttachedToWindow) return@post
                 when {
                     items == null -> status.text = "Connexion impossible. Vérifie ta clé."
                     items.isEmpty() -> status.text = "Aucun GIF trouvé"
                     else -> {
                         status.text = ""
-                        build(items.map { it.preview to it.gif })
+                        build(items.map { it.preview to it.gif }, seq)
                     }
                 }
             }
         }
     }
 
-    private fun build(items: List<Pair<String, String>>) {
+    private fun build(items: List<Pair<String, String>>, seq: Int) {
         grid.removeAllViews()
         items.chunked(2).forEach { pair ->
             val row = LinearLayout(context).apply { orientation = HORIZONTAL }
@@ -209,11 +238,13 @@ class GifPanel(
                     setOnClickListener { download(gifUrl) }
                 }
                 row.addView(iv)
-                thread {
+                worker.submit {
                     try {
-                        val bytes = fetchBytes(previewUrl)
+                        val bytes = fetchBytes(previewUrl, 5 * 1024 * 1024)
                         val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        if (bmp != null) main.post { iv.setImageBitmap(bmp) }
+                        if (bmp != null) main.post {
+                            if (seq == searchSeq.get() && isAttachedToWindow) iv.setImageBitmap(bmp)
+                        }
                     } catch (_: Exception) {
                     }
                 }
@@ -229,19 +260,26 @@ class GifPanel(
 
     private fun download(gifUrl: String) {
         status.text = "Envoi du GIF…"
-        thread {
+        worker.submit {
             try {
-                val bytes = fetchBytes(gifUrl)
+                val bytes = fetchBytes(gifUrl, 18 * 1024 * 1024)
                 val dir = File(context.cacheDir, "gifs").apply { mkdirs() }
                 val file = File(dir, "gif_${gifUrl.hashCode()}.gif")
                 file.writeBytes(bytes)
                 main.post {
+                    if (!isAttachedToWindow) return@post
                     status.text = ""
                     onCommit(file)
                 }
             } catch (_: Exception) {
-                main.post { status.text = "Échec du téléchargement" }
+                main.post { if (isAttachedToWindow) status.text = "Échec du téléchargement" }
             }
         }
+    }
+
+    override fun onDetachedFromWindow() {
+        searchSeq.incrementAndGet()
+        worker.shutdownNow()
+        super.onDetachedFromWindow()
     }
 }

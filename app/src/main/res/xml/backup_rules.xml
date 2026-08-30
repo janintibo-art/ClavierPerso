@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Les clés API chiffrées restent uniquement sur l'appareil. -->
+    <exclude domain="sharedpref" path="clavier_secrets.xml" />
+</full-backup-content>

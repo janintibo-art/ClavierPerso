@@ -16,10 +16,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
-import android.renderscript.Allocation
-import android.renderscript.Element
-import android.renderscript.RenderScript
-import android.renderscript.ScriptIntrinsicBlur
 import java.io.File
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -48,6 +44,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onMoveCursor(delta: Int)
         fun onClipboardPanel()
         fun onRewrite()
+        fun onMoreTools()
         fun onSuggestion(word: String)
     }
 
@@ -66,6 +63,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         const val CODE_FIX = -15
         const val CODE_AI = -16
         const val CODE_NAV = -17
+        const val CODE_MORE = -18
         // Les suggestions occupent une plage FERMEE : -11, -12, -13.
         // Tout nouveau code doit rester en dehors de cette plage.
         const val CODE_SUG = -11
@@ -108,6 +106,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     var aiMode: String? = null
         set(value) {
             field = value
+            invalidate()
+        }
+
+    /** Champ demandant explicitement de ne rien apprendre ni envoyer en ligne. */
+    var privateMode: Boolean = false
+        set(value) {
+            field = value
+            requestLayout()
             invalidate()
         }
 
@@ -185,35 +191,33 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         invalidate()
     }
 
+    /**
+     * Flou léger sans RenderScript (déprécié). On travaille sur une copie réduite,
+     * puis on effectue plusieurs passes de mise à l'échelle filtrée. Le coût reste
+     * faible car cette méthode n'est appelée qu'au chargement/changement du fond.
+     */
     private fun blurBitmap(src: Bitmap, amount: Int): Bitmap {
+        if (amount <= 0) return src
         return try {
-            val radius = (amount / 100f * 24f).coerceIn(1f, 25f)
-            val input = src.copy(Bitmap.Config.ARGB_8888, true) ?: return src
-            val output = Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888)
-            val rs = RenderScript.create(context)
-            val inAlloc = Allocation.createFromBitmap(rs, input)
-            val outAlloc = Allocation.createFromBitmap(rs, output)
-            val script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
-            script.setRadius(radius)
-            script.setInput(inAlloc)
-            script.forEach(outAlloc)
-            outAlloc.copyTo(output)
-            rs.destroy()
-            output
-        } catch (e: Exception) {
-            // Repli universel : reduction puis agrandissement = flou
-            try {
-                val factor = (1 + amount / 12).coerceIn(2, 12)
-                val small = Bitmap.createScaledBitmap(
-                    src,
-                    (src.width / factor).coerceAtLeast(1),
-                    (src.height / factor).coerceAtLeast(1),
-                    true
-                )
-                Bitmap.createScaledBitmap(small, src.width, src.height, true)
-            } catch (e2: Exception) {
-                src
+            val factor = (2 + amount / 10).coerceIn(2, 12)
+            val w = (src.width / factor).coerceAtLeast(1)
+            val h = (src.height / factor).coerceAtLeast(1)
+            var small = Bitmap.createScaledBitmap(src, w, h, true)
+            val passes = (1 + amount / 25).coerceIn(1, 5)
+            repeat(passes) {
+                val halfW = (w / 2).coerceAtLeast(1)
+                val halfH = (h / 2).coerceAtLeast(1)
+                val half = Bitmap.createScaledBitmap(small, halfW, halfH, true)
+                val next = Bitmap.createScaledBitmap(half, w, h, true)
+                if (small !== src && small !== next && !small.isRecycled) small.recycle()
+                if (half !== next && !half.isRecycled) half.recycle()
+                small = next
             }
+            val out = Bitmap.createScaledBitmap(small, src.width, src.height, true)
+            if (small !== out && !small.isRecycled) small.recycle()
+            out
+        } catch (_: Exception) {
+            src
         }
     }
 
@@ -327,7 +331,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private fun toolsHeight() = dp(40f)
     private fun sugHeight() =
-        if (prefs.suggestionsEnabled || translateMode != null || aiMode != null) dp(42f) else 0f
+        if (privateMode || prefs.suggestionsEnabled || translateMode != null || aiMode != null) dp(42f) else 0f
     private fun barHeight() = toolsHeight() + sugHeight()
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -416,19 +420,29 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             canvas.drawText(label, rect.centerX(), ty, textPaint)
         }
 
-        val tools = if (prefs.simpleMode) listOf(
-            Key("😀", CODE_EMOJI),
-            Key("📋", CODE_PASTE),
-            Key("⚙️", CODE_SETTINGS)
-        ) else listOf(
-            Key("😀", CODE_EMOJI),
-            Key("GIF", CODE_GIF),
-            Key("📋", CODE_PASTE),
-            Key("✅", CODE_FIX),
-            Key("🤖", CODE_AI),
-            Key("🌍", CODE_TRANSLATE),
-            Key("⚙️", CODE_SETTINGS)
-        )
+        val tools = when {
+            privateMode || prefs.simpleMode -> listOf(
+                Key("😀", CODE_EMOJI),
+                Key("📋", CODE_PASTE),
+                Key("⚙️", CODE_SETTINGS)
+            )
+            prefs.compactToolbar -> listOf(
+                Key("😀", CODE_EMOJI),
+                Key("📋", CODE_PASTE),
+                Key("🤖", CODE_AI),
+                Key("🌍", CODE_TRANSLATE),
+                Key("⋯", CODE_MORE)
+            )
+            else -> listOf(
+                Key("😀", CODE_EMOJI),
+                Key("GIF", CODE_GIF),
+                Key("📋", CODE_PASTE),
+                Key("✅", CODE_FIX),
+                Key("🤖", CODE_AI),
+                Key("🌍", CODE_TRANSLATE),
+                Key("⚙️", CODE_SETTINGS)
+            )
+        }
         val toolW = width / tools.size.toFloat()
         tools.forEachIndexed { i, key ->
             val r = RectF(toolW * i, 0f, toolW * (i + 1), toolsH)
@@ -448,7 +462,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             val am = aiMode
             // Le bandeau lance l'action ; le ✕ a droite quitte le mode.
             val exitW = dp(52f)
-            if (tm != null) {
+            if (privateMode) {
+                topItem(
+                    Key("🛡 Mode privé · aucun apprentissage / réseau", CODE_SETTINGS),
+                    RectF(0f, toolsH, width.toFloat(), toolsH + sugH), sp(13.5f), active = true
+                )
+            } else if (tm != null) {
                 topItem(
                     Key("➜ Traduire en $tm", CODE_ENTER),
                     RectF(0f, toolsH, width - exitW, toolsH + sugH), sp(15f), active = true
@@ -898,6 +917,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val downTime: Long
     ) {
         var longPressDone = false
+        var instantFired = false
+        var instantWasShifted = false
         var isSpaceCursor = false
         var cursorAnchor = 0f
     }
@@ -982,7 +1003,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val secondary = if (!symbols) Layouts.secondary(key.label) else null
         val text = accent ?: secondary ?: return
         p.longPressDone = true
-        val out = if (accent != null && (shift || caps)) text.uppercase() else text
+        val upper = (shift || caps) || (p.instantFired && p.instantWasShifted)
+        val out = if (accent != null && upper) text.uppercase() else text
+        if (p.instantFired) listener.onDelete()
         listener.onText(out)
         if (accent != null && shift && !caps) shift = false
         pointers.remove(id)
@@ -1038,6 +1061,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 pressTimes[key.label] = System.currentTimeMillis()
                 feedback()
                 scheduleLongPress(id, key)
+
+                // Mode frappe instantanée : les caractères imprimables partent dès le contact.
+                // Si le geste devient un swipe, KeyboardService remplacera ce caractère par le mot reconnu.
+                if (prefs.instantKey && key.code >= 0) {
+                    p.instantWasShifted = shift || caps
+                    p.instantFired = true
+                    handleKey(key)
+                }
                 invalidate()
             }
 
@@ -1096,8 +1127,25 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     // Le doigt glisse vers une autre touche : on suit
                     val over = keyAt(x, y)
                     if (over != null && over !== p.key) {
-                        p.key = over
-                        pressedKey = over
+                        // En frappe instantanee, la lettre precedente a deja ete
+                        // envoyee : on la remplace pour que le glissement corrige
+                        // toujours la visee, comme sur un clavier classique.
+                        if (p.instantFired) {
+                            listener.onDelete()
+                            if (over.code >= 0) {
+                                p.instantWasShifted = shift || caps
+                                p.key = over
+                                pressedKey = over
+                                handleKey(over)
+                            } else {
+                                p.instantFired = false
+                                p.key = over
+                                pressedKey = over
+                            }
+                        } else {
+                            p.key = over
+                            pressedKey = over
+                        }
                         scheduleLongPress(id, over)
                         feedback()
                         invalidate()
@@ -1160,10 +1208,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 if (p != null) {
                     val key = p.key
                     pressTimes[key.label] = System.currentTimeMillis()
+                    // L'effet visuel de frappe est rendu meme en mode instantane
                     if (!p.longPressDone && !p.isSpaceCursor) {
                         flashKey = key
                         flashUntil = System.currentTimeMillis() + 160
                         addRipple(key)
+                    }
+                    if (!p.longPressDone && !p.isSpaceCursor && !p.instantFired) {
 
                         // Double appui rapide sur ⌫ : selectionne le mot precedent
                         val now = System.currentTimeMillis()
@@ -1209,6 +1260,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             key.code == CODE_TRANSLATE -> listener.onTranslateToggle()
             key.code == CODE_FIX -> listener.onFixSpelling()
             key.code == CODE_AI -> listener.onAiToggle()
+            key.code == CODE_MORE -> listener.onMoreTools()
             else -> {
                 var t = key.label
                 if (!symbols && (shift || caps)) t = t.uppercase()
