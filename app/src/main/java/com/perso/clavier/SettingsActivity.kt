@@ -130,6 +130,16 @@ class SettingsActivity : Activity() {
             preview.suggestions = candidates.drop(1).take(3)
         }
 
+        override fun onSelectWord() {
+            val t = testField.text.toString()
+            val c = testField.selectionStart.coerceIn(0, t.length)
+            var st = c
+            while (st > 0 && !t[st - 1].isWhitespace()) st--
+            var en = c
+            while (en < t.length && !t[en].isWhitespace()) en++
+            if (en > st) testField.setSelection(st, en)
+        }
+
         override fun onDeleteWord() {
             val t = testField.text
             val s2 = t.toString().trimEnd()
@@ -371,6 +381,14 @@ class SettingsActivity : Activity() {
         root.addView(choiceRow(listOf("Pleine largeur", "À gauche", "À droite"), prefs.oneHandMode, 13f) {
             prefs.oneHandMode = it
             preview.refresh()
+        })
+        root.addView(hint("Taille globale du clavier"))
+        root.addView(seek(70, 140, prefs.keyboardScale) {
+            prefs.keyboardScale = it
+            preview.refresh()
+        })
+        root.addView(switchRow("Double appui sur ⌫ : sélectionner le mot", prefs.doubleTapSelect) {
+            prefs.doubleTapSelect = it
         })
         root.addView(hint("Marge sous le clavier (utile avec la navigation par gestes)"))
         root.addView(seek(0, 40, prefs.bottomPadding) {

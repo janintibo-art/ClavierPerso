@@ -44,6 +44,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onDeleteWord()
         fun onVoiceInput()
         fun onSwipeWord(candidates: List<String>)
+        fun onSelectWord()
         fun onMoveCursor(delta: Int)
         fun onClipboardPanel()
         fun onRewrite()
@@ -78,6 +79,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var caps = false
     private var symbols = false
     private var lastShiftTap = 0L
+    private var lastDelTap = 0L
 
     private var prefs = Prefs(context)
     private var bgBitmap: Bitmap? = null
@@ -151,6 +153,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun dp(v: Float) = v * resources.displayMetrics.density
+
+    /** Hauteur d'une rangee, mise a l'echelle globale du clavier. */
+    private fun rowHeight() = dp(prefs.keyHeight.toFloat()) * (prefs.keyboardScale / 100f)
     private fun sp(v: Float) = v * resources.displayMetrics.scaledDensity
 
     fun refresh() {
@@ -327,7 +332,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = (barHeight() + dp(prefs.keyHeight.toFloat()) * rows().size +
+        val h = (barHeight() + rowHeight() * rows().size +
                 dp(12f) + dp(prefs.bottomPadding.toFloat())).toInt()
         setMeasuredDimension(w, h)
     }
@@ -480,7 +485,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
 
         // ---------- Touches ----------
-        val rowH = dp(prefs.keyHeight.toFloat())
+        val rowH = rowHeight()
         val margin = dp(3f)
         val radius = dp(9f)
         // Mode une main : le clavier se resserre a gauche ou a droite
@@ -586,7 +591,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             val rect = keyRects.firstOrNull { it.first === pk }?.second
             if (rect != null) {
                 val bw = maxOf(rect.width() * 1.25f, dp(46f))
-                val bh = dp(prefs.keyHeight.toFloat())
+                val bh = rowHeight()
                 val cx = rect.centerX().coerceIn(bw / 2, width - bw / 2)
                 var bottom = rect.top - dp(4f)
                 var top = bottom - bh
@@ -1009,7 +1014,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                         flashKey = key
                         flashUntil = System.currentTimeMillis() + 160
                         addRipple(key)
-                        handleKey(key)
+
+                        // Double appui rapide sur ⌫ : selectionne le mot precedent
+                        val now = System.currentTimeMillis()
+                        if (prefs.doubleTapSelect && key.code == CODE_DEL &&
+                            now - lastDelTap < 300
+                        ) {
+                            lastDelTap = 0
+                            listener.onSelectWord()
+                        } else {
+                            if (key.code == CODE_DEL) lastDelTap = now
+                            handleKey(key)
+                        }
                     }
                 }
                 invalidate()

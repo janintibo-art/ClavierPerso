@@ -71,6 +71,22 @@ object AiModes {
             "Tu rédiges un message de vœux chaleureux et personnel selon l'occasion. $RULE"
         ),
         Mode(
+            "💬 3 réponses rapides", "Réponses",
+            "Colle le message reçu : 3 réponses possibles",
+            "L'utilisateur te donne un message qu'il a reçu. " +
+                    "Propose exactement 3 réponses courtes et naturelles, très différentes " +
+                    "entre elles (une positive, une neutre ou évasive, une négative). " +
+                    "Une par ligne, numérotées 1. 2. 3. Rien d'autre."
+        ),
+        Mode(
+            "🎯 Adapter le ton", "Ton",
+            "Ton message + à qui : « ... pour mon patron »",
+            "L'utilisateur écrit un message et précise à qui il s'adresse. " +
+                    "Réécris le message avec le niveau de langue adapté au destinataire " +
+                    "(familier pour un ami, soutenu pour un supérieur). " +
+                    "Réponds UNIQUEMENT avec le message réécrit."
+        ),
+        Mode(
             "💻 Commande Termux", "Termux",
             "Décris ce que tu veux faire : « créer un dépôt git »",
             "Tu es un assistant Termux sur Android. L'utilisateur décrit ce qu'il veut faire, " +

@@ -450,6 +450,28 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private var swipeAlternatives: List<String> = emptyList()
 
+    /** Selectionne le mot situe avant le curseur. */
+    override fun onSelectWord() {
+        val ic = currentInputConnection ?: return
+        try {
+            val extracted = ic.getExtractedText(
+                android.view.inputmethod.ExtractedTextRequest(), 0
+            ) ?: return
+            val text = extracted.text?.toString() ?: return
+            val cursor = extracted.selectionStart.coerceIn(0, text.length)
+            var start = cursor
+            while (start > 0 && !text[start - 1].isWhitespace()) start--
+            var end = cursor
+            while (end < text.length && !text[end].isWhitespace()) end++
+            if (end > start) {
+                ic.setSelection(start, end)
+                Toast.makeText(this, "Mot sélectionné", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Sélection impossible ici", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onDeleteWord() {
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(120, 0)?.toString() ?: ""

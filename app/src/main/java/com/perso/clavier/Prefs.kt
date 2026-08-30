@@ -251,6 +251,21 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("show_on_tap", true)
         set(v) { sp.edit().putBoolean("show_on_tap", v).apply() }
 
+    /** Double appui sur un mot : le selectionner. */
+    var doubleTapSelect: Boolean
+        get() = sp.getBoolean("dbl_tap_select", true)
+        set(v) { sp.edit().putBoolean("dbl_tap_select", v).apply() }
+
+    /** Hauteur du clavier en pourcentage (redimensionnement global). */
+    var keyboardScale: Int
+        get() = sp.getInt("kb_scale", 100)
+        set(v) { sp.edit().putInt("kb_scale", v).apply() }
+
+    /** Clavier flottant, deplacable a l'ecran. */
+    var floating: Boolean
+        get() = sp.getBoolean("floating", false)
+        set(v) { sp.edit().putBoolean("floating", v).apply() }
+
     /** Glisser le doigt sur les lettres pour ecrire un mot. */
     var swipeEnabled: Boolean
         get() = sp.getBoolean("swipe", true)
