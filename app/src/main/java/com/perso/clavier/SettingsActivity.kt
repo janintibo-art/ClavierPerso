@@ -44,6 +44,27 @@ class SettingsActivity : Activity() {
     private lateinit var colorsContainer: LinearLayout
     private lateinit var shortcutsContainer: LinearLayout
     private var keyEditMode = false
+
+    /**
+     * Palette des réglages : terre cuite chaleureuse plutôt que rouge vif,
+     * fonds ivoire et gris tièdes. Le rouge franc reste réservé à l'identité
+     * du clavier lui-même et aux actions destructives.
+     */
+    private object Palette {
+        const val ACCENT = "#B4453C"        // terre cuite, chaud et lisible
+        const val ACCENT_SOFT = "#F0DCD6"   // fond d'accent très clair
+        const val PRIMARY_BTN = "#A8443C"   // boutons principaux
+        const val NEUTRAL = "#EFE8E4"       // choix non sélectionné : pastille claire
+        const val NEUTRAL_TEXT = "#5A4F4A" // texte sur pastille claire
+        const val OK = "#4E7A5B"            // validation, vert sauge
+        const val DANGER = "#9B3A34"        // suppression
+        const val BG = "#FAF6F3"            // fond général, ivoire
+        const val CARD = "#FFFFFF"
+        const val TEXT = "#2E2724"          // brun très foncé, plus doux que le noir
+        const val TEXT_SOFT = "#6E625C"     // texte secondaire
+        const val CHIP = "#5A4A44"          // pastilles de navigation, brun chaud
+        const val BORDER = "#E6DDD8"        // contour du cadre d'aperçu
+    }
     private var memoryRefresher: (() -> Unit)? = null
     private lateinit var appThemesInfo: TextView
     private lateinit var preview: KeyboardView
@@ -51,6 +72,16 @@ class SettingsActivity : Activity() {
     private lateinit var settingsScroll: ScrollView
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /** Applique l'apparence d'un bouton de choix (actif ou non). */
+    private fun styleChoice(tv: TextView, active: Boolean, radius: Int = 14) {
+        tv.background = rounded(
+            Color.parseColor(if (active) Palette.ACCENT else Palette.NEUTRAL), radius
+        )
+        tv.setTextColor(
+            Color.parseColor(if (active) "#FFFFFF" else Palette.NEUTRAL_TEXT)
+        )
+    }
 
     private fun rounded(color: Int, radius: Int = 14): GradientDrawable =
         GradientDrawable().apply {
@@ -176,19 +207,19 @@ class SettingsActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(28), dp(20), dp(32))
-            setBackgroundColor(Color.parseColor("#F2F0F0"))
+            setBackgroundColor(Color.parseColor(Palette.BG))
         }
 
         root.addView(TextView(this).apply {
             text = "Anarchie Clavier"
             textSize = 26f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#202124"))
+            setTextColor(Color.parseColor(Palette.TEXT))
         })
         root.addView(TextView(this).apply {
             text = "Suggestions, emojis, presse-papiers, 3 langues, et tout est personnalisable"
             textSize = 14f
-            setTextColor(Color.parseColor("#5F6368"))
+            setTextColor(Color.parseColor(Palette.TEXT_SOFT))
             setPadding(0, dp(6), 0, dp(16))
         })
 
@@ -227,7 +258,7 @@ class SettingsActivity : Activity() {
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
-                background = rounded(Color.parseColor("#2B2525"), 16)
+                background = rounded(Color.parseColor(Palette.CHIP), 16)
                 setPadding(dp(14), dp(10), dp(14), dp(10))
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -257,7 +288,7 @@ class SettingsActivity : Activity() {
         preview = KeyboardView(this, previewListener)
         val previewCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(Color.parseColor("#DADCE0"), 18)
+            background = rounded(Color.parseColor(Palette.BORDER), 18)
             setPadding(dp(4), dp(4), dp(4), dp(4))
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -331,8 +362,10 @@ class SettingsActivity : Activity() {
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.langIndex) "#C81D25" else "#9AA0A6"))
+                setTextColor(
+                    Color.parseColor(if (index == prefs.langIndex) "#FFFFFF" else Palette.NEUTRAL_TEXT)
+                )
+                background = rounded(Color.parseColor(if (index == prefs.langIndex) Palette.ACCENT else Palette.NEUTRAL), 14)
                 setPadding(dp(8), dp(10), dp(8), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(8)
@@ -341,8 +374,7 @@ class SettingsActivity : Activity() {
                     prefs.langIndex = index
                     preview.refresh()
                     for (i in 0 until langRow.childCount) {
-                        (langRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"))
+                        styleChoice((langRow.getChildAt(i) as TextView), i == index, 14)
                     }
                 }
             })
@@ -464,8 +496,10 @@ class SettingsActivity : Activity() {
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.pressEffect) "#C81D25" else "#9AA0A6"), 10)
+                setTextColor(
+                    Color.parseColor(if (index == prefs.pressEffect) "#FFFFFF" else Palette.NEUTRAL_TEXT)
+                )
+                background = rounded(Color.parseColor(if (index == prefs.pressEffect) Palette.ACCENT else Palette.NEUTRAL), 10)
                 setPadding(dp(2), dp(10), dp(2), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(4)
@@ -474,8 +508,7 @@ class SettingsActivity : Activity() {
                     prefs.pressEffect = index
                     preview.refresh()
                     for (i in 0 until effectRow.childCount) {
-                        (effectRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"), 10)
+                        styleChoice((effectRow.getChildAt(i) as TextView), i == index, 10)
                     }
                 }
             })
@@ -563,8 +596,10 @@ class SettingsActivity : Activity() {
                 textSize = 12f
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.rgbMode) "#C81D25" else "#9AA0A6"), 10)
+                setTextColor(
+                    Color.parseColor(if (index == prefs.rgbMode) "#FFFFFF" else Palette.NEUTRAL_TEXT)
+                )
+                background = rounded(Color.parseColor(if (index == prefs.rgbMode) Palette.ACCENT else Palette.NEUTRAL), 10)
                 setPadding(dp(4), dp(10), dp(4), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(5)
@@ -573,8 +608,7 @@ class SettingsActivity : Activity() {
                     prefs.rgbMode = index
                     preview.refresh()
                     for (i in 0 until rgbRow.childCount) {
-                        (rgbRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"), 10)
+                        styleChoice((rgbRow.getChildAt(i) as TextView), i == index, 10)
                     }
                 }
             })
@@ -604,11 +638,11 @@ class SettingsActivity : Activity() {
             if (keyEditMode) {
                 preview.editModeListener = { label -> editKeyDialog(label) }
                 editBtn.text = "✅ Mode édition actif — appuie sur une touche"
-                editBtn.background = rounded(Color.parseColor("#0F9D58"))
+                editBtn.background = rounded(Color.parseColor(Palette.OK))
             } else {
                 preview.editModeListener = null
                 editBtn.text = "✏️ Activer le mode édition"
-                editBtn.background = rounded(Color.parseColor("#C81D25"))
+                editBtn.background = rounded(Color.parseColor(Palette.ACCENT))
             }
         }
         root.addView(editBtn)
@@ -622,7 +656,7 @@ class SettingsActivity : Activity() {
         root.addView(section("Mémoire du clavier 🧠").apply { tag = "nav_intelligence" })
         val memoryInfo = TextView(this).apply {
             textSize = 13f
-            setTextColor(Color.parseColor("#5F6368"))
+            setTextColor(Color.parseColor(Palette.TEXT_SOFT))
             setPadding(dp(4), dp(4), dp(4), dp(2))
         }
         fun refreshMemory() {
@@ -680,7 +714,7 @@ class SettingsActivity : Activity() {
         root.addView(button("➕ Associer une application à un thème") { appThemeDialog() })
         appThemesInfo = TextView(this).apply {
             textSize = 13f
-            setTextColor(Color.parseColor("#5F6368"))
+            setTextColor(Color.parseColor(Palette.TEXT_SOFT))
             setPadding(dp(4), dp(6), dp(4), dp(2))
         }
         root.addView(appThemesInfo)
@@ -806,8 +840,10 @@ class SettingsActivity : Activity() {
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                background = rounded(Color.parseColor(if (index == prefs.gifProvider) "#C81D25" else "#9AA0A6"))
+                setTextColor(
+                    Color.parseColor(if (index == prefs.gifProvider) "#FFFFFF" else Palette.NEUTRAL_TEXT)
+                )
+                background = rounded(Color.parseColor(if (index == prefs.gifProvider) Palette.ACCENT else Palette.NEUTRAL), 14)
                 setPadding(dp(8), dp(10), dp(8), dp(10))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (index > 0) lp.leftMargin = dp(8)
@@ -815,8 +851,7 @@ class SettingsActivity : Activity() {
                 setOnClickListener {
                     prefs.gifProvider = index
                     for (i in 0 until gifRow.childCount) {
-                        (gifRow.getChildAt(i) as TextView).background =
-                            rounded(Color.parseColor(if (i == index) "#C81D25" else "#9AA0A6"))
+                        styleChoice((gifRow.getChildAt(i) as TextView), i == index, 14)
                     }
                 }
             })
@@ -933,10 +968,10 @@ class SettingsActivity : Activity() {
                     this.textSize = textSize
                     gravity = Gravity.CENTER
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.WHITE)
-                    background = rounded(
-                        Color.parseColor(if (index == selected) "#C81D25" else "#9AA0A6"), 10
+                    setTextColor(
+                        Color.parseColor(if (index == selected) "#FFFFFF" else Palette.NEUTRAL_TEXT)
                     )
+                    background = rounded(Color.parseColor(if (index == selected) Palette.ACCENT else Palette.NEUTRAL), 10)
                     setPadding(dp(3), dp(10), dp(3), dp(10))
                     val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     lp.setMargins(dp(3), dp(3), dp(3), dp(3))
@@ -944,9 +979,7 @@ class SettingsActivity : Activity() {
                     setOnClickListener {
                         onPick(index)
                         buttons.forEachIndexed { j, b ->
-                            b.background = rounded(
-                                Color.parseColor(if (j == index) "#C81D25" else "#9AA0A6"), 10
-                            )
+                            styleChoice(b, j == index, 10)
                         }
                     }
                 }
@@ -1137,7 +1170,7 @@ class SettingsActivity : Activity() {
             text = "Écris ou colle tes mots, séparés par des espaces, des virgules ou des retours à la ligne.\n" +
                     "Exemple : Janintibo, Termux, Atoll, kinésithérapeute"
             textSize = 13f
-            setTextColor(Color.parseColor("#5F6368"))
+            setTextColor(Color.parseColor(Palette.TEXT_SOFT))
         })
         val field = EditText(this).apply {
             hint = "mes mots…"
@@ -1269,14 +1302,14 @@ class SettingsActivity : Activity() {
         this.text = text
         textSize = 17f
         setTypeface(typeface, Typeface.BOLD)
-        setTextColor(Color.parseColor("#202124"))
+        setTextColor(Color.parseColor(Palette.TEXT))
         setPadding(0, dp(24), 0, dp(10))
     }
 
     private fun hint(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 13f
-        setTextColor(Color.parseColor("#5F6368"))
+        setTextColor(Color.parseColor(Palette.TEXT_SOFT))
         setPadding(dp(4), dp(4), dp(4), dp(2))
     }
 
@@ -1286,7 +1319,7 @@ class SettingsActivity : Activity() {
         gravity = Gravity.CENTER
         setTextColor(Color.WHITE)
         setTypeface(typeface, Typeface.BOLD)
-        background = rounded(Color.parseColor("#C81D25"))
+        background = rounded(Color.parseColor(Palette.PRIMARY_BTN))
         setPadding(dp(16), dp(14), dp(16), dp(14))
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1313,7 +1346,7 @@ class SettingsActivity : Activity() {
             addView(TextView(this@SettingsActivity).apply {
                 this.text = text
                 textSize = 15f
-                setTextColor(Color.parseColor("#202124"))
+                setTextColor(Color.parseColor(Palette.TEXT))
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(Switch(this@SettingsActivity).apply {
@@ -1411,7 +1444,7 @@ class SettingsActivity : Activity() {
             addView(TextView(this@SettingsActivity).apply {
                 text = label
                 textSize = 15f
-                setTextColor(Color.parseColor("#202124"))
+                setTextColor(Color.parseColor(Palette.TEXT))
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(swatch)
@@ -1450,20 +1483,20 @@ class SettingsActivity : Activity() {
                 text = key
                 textSize = 15f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#C81D25"))
+                setTextColor(Color.parseColor(Palette.ACCENT))
             })
             row.addView(TextView(this).apply {
                 text = "  ->  " + value
                 textSize = 14f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setTextColor(Color.parseColor("#202124"))
+                setTextColor(Color.parseColor(Palette.TEXT))
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
             row.addView(TextView(this).apply {
                 text = "✕"
                 textSize = 16f
-                setTextColor(Color.parseColor("#B00020"))
+                setTextColor(Color.parseColor(Palette.DANGER))
                 setPadding(dp(12), dp(4), dp(8), dp(4))
                 setOnClickListener {
                     prefs.removeShortcut(key)
@@ -1600,7 +1633,7 @@ class SettingsActivity : Activity() {
             text = "Colle ici un texte que tu as écrit : une conversation WhatsApp, " +
                     "des notes, des mails… Plus le texte est long, mieux le clavier te connaîtra."
             textSize = 13f
-            setTextColor(Color.parseColor("#5F6368"))
+            setTextColor(Color.parseColor(Palette.TEXT_SOFT))
         })
         val field = EditText(this).apply {
             hint = "Colle ton texte ici…"
@@ -1673,7 +1706,7 @@ class SettingsActivity : Activity() {
                     "puis colle-la ici. Formats acceptés : « slt = Salut », « slt : Salut », " +
                     "« slt → Salut », ou une ligne sur deux."
             textSize = 13f
-            setTextColor(Color.parseColor("#5F6368"))
+            setTextColor(Color.parseColor(Palette.TEXT_SOFT))
         })
         val field = EditText(this).apply {
             hint = "Colle ici tes raccourcis…"

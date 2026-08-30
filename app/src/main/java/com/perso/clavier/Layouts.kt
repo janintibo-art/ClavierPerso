@@ -41,6 +41,65 @@ object Layouts {
 
     fun secondary(label: String): String? = secondaryMap[label.lowercase()]
 
+    /**
+     * Toutes les variantes proposees par l'appui long, dans l'ordre d'affichage.
+     * La premiere est celle preselectionnee.
+     */
+    private val variantMap: Map<String, String> = mapOf(
+        "a" to "à â á ä ã å æ",
+        "e" to "é è ê ë €",
+        "i" to "î ï í ì",
+        "o" to "ô ö ó ò õ œ",
+        "u" to "ù û ü ú",
+        "y" to "ÿ ý",
+        "c" to "ç",
+        "n" to "ñ",
+        "s" to "ß §",
+        "'" to "’ ‘ ` \" «  »",
+        "-" to "– — _ ·",
+        "." to "… . ; :",
+        "," to ", ; :",
+        "!" to "! ¡ ‼",
+        "?" to "? ¿ ⁇",
+        "1" to "1 ¹ ½ ⅓",
+        "2" to "2 ²",
+        "3" to "3 ³",
+        "0" to "0 ° ø",
+        "+" to "+ ± ×",
+        "=" to "= ≠ ≈ ≤ ≥",
+        "/" to "/ \\ ÷",
+        "(" to "( [ { <",
+        ")" to ") ] } >",
+        "€" to "€ $ £ ¥ ¢",
+        "@" to "@ ℅",
+        "#" to "# №",
+        "*" to "* † ‡ •",
+        "\"" to "\" “ ” „ « »",
+        ":" to ": ÷",
+        ";" to "; ,",
+        "%" to "% ‰",
+        "&" to "& §"
+    )
+
+    /**
+     * Variantes disponibles pour une touche : accents de la langue en premier,
+     * puis le chiffre ou symbole secondaire, puis les autres variantes.
+     */
+    fun variants(label: String, lang: Int, symbols: Boolean): List<String> {
+        val key = label.lowercase()
+        val out = LinkedHashSet<String>()
+        if (!symbols) {
+            accents(lang)[key]?.let { out.add(it) }
+            secondary(key)?.let { out.add(it) }
+        }
+        variantMap[key]?.split(" ")?.forEach { v ->
+            val t = v.trim()
+            if (t.isNotEmpty()) out.add(t)
+        }
+        out.remove(label)
+        return out.toList()
+    }
+
     fun accents(lang: Int): Map<String, String> = when (lang) {
         1 -> mapOf("a" to "á", "e" to "é", "i" to "í", "o" to "ó", "u" to "ú")
         2 -> mapOf("n" to "ñ", "a" to "á", "e" to "é", "i" to "í", "o" to "ó", "u" to "ú")

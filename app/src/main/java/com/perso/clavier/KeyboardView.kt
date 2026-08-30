@@ -165,6 +165,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun sp(v: Float) = v * resources.displayMetrics.scaledDensity
 
     fun refresh() {
+        if (popupKey != null) closePopup(false)
         prefs = Prefs(context)
         textPaint.typeface = Fonts.get(prefs.fontIndex)
         bgBitmap = null
@@ -613,6 +614,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             swipePaint.alpha = 255
         }
 
+        drawVariantPopup(canvas)
+
         drawRipples(canvas)
 
         // Bulle d'apercu au-dessus de la touche pressee
@@ -783,6 +786,65 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
+    /** Menu de variantes affiche au-dessus de la touche pressee. */
+    private fun drawVariantPopup(canvas: Canvas) {
+        val key = popupKey ?: return
+        val variants = popupVariants
+        if (variants.isEmpty()) return
+        val keyRect = keyRects.firstOrNull { it.first === key }?.second ?: return
+
+        popupRects.clear()
+        val cellW = maxOf(dp(46f), keyRect.width())
+        val cellH = dp(prefs.keyHeight.toFloat()) * 0.95f
+        val pad = dp(5f)
+        val totalW = cellW * variants.size + pad * 2
+
+        // Centre sur la touche, sans depasser les bords de l'ecran
+        var left = keyRect.centerX() - totalW / 2
+        left = left.coerceIn(dp(2f), maxOf(dp(2f), width - totalW - dp(2f)))
+        var top = keyRect.top - cellH - dp(12f)
+        if (top < dp(2f)) top = keyRect.bottom + dp(8f)
+        val rect = RectF(left, top, left + totalW, top + cellH + pad * 2)
+
+        // Ombre puis fond du menu
+        shadowPaint.color = Color.argb(90, 0, 0, 0)
+        canvas.drawRoundRect(
+            RectF(rect.left, rect.top + dp(3f), rect.right, rect.bottom + dp(3f)),
+            dp(12f), dp(12f), shadowPaint
+        )
+        keyPaint.color = colSpecial()
+        canvas.drawRoundRect(rect, dp(12f), dp(12f), keyPaint)
+        borderPaint.style = Paint.Style.STROKE
+        borderPaint.strokeWidth = dp(1.2f)
+        borderPaint.color = colAccent()
+        canvas.drawRoundRect(rect, dp(12f), dp(12f), borderPaint)
+        borderPaint.style = Paint.Style.FILL
+
+        for ((i, v) in variants.withIndex()) {
+            val cell = RectF(
+                rect.left + pad + cellW * i,
+                rect.top + pad,
+                rect.left + pad + cellW * (i + 1),
+                rect.bottom - pad
+            )
+            popupRects.add(cell)
+
+            val selected = i == popupIndex
+            if (selected) {
+                keyPaint.color = colAccent()
+                canvas.drawRoundRect(
+                    RectF(cell.left + dp(2f), cell.top, cell.right - dp(2f), cell.bottom),
+                    dp(9f), dp(9f), keyPaint
+                )
+            }
+            textPaint.color = if (selected) colTextAccent() else colText()
+            textPaint.textSize = sp(prefs.textSize * (if (selected) 1.25f else 1.05f))
+            val label = if ((shift || caps) && v.length == 1 && v[0].isLetter()) v.uppercase() else v
+            val ty = cell.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
+            canvas.drawText(label, cell.centerX(), ty, textPaint)
+        }
+    }
+
     private fun keyAt(x: Float, y: Float): Key? {
         keyRects.firstOrNull { it.second.contains(x, y) }?.let { return it.first }
         // Tolerance : rattraper les appuis qui tombent entre deux touches
@@ -925,6 +987,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private val pointers = HashMap<Int, Pointer>()
 
+    /** Menu de variantes ouvert par un appui long sur une touche. */
+    private var popupKey: Key? = null
+    private var popupVariants: List<String> = emptyList()
+    private var popupIndex = 0
+    private var popupPointerId = -1
+    private val popupRects = ArrayList<RectF>()
+
     /** Trace du glissement en cours (coordonnees ecran). */
     private val swipePath = ArrayList<FloatArray>()
     private var swiping = false
@@ -999,17 +1068,74 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun fireLongPressKey(id: Int, key: Key) {
         val p = pointers[id] ?: return
         val lang = prefs.langIndex.coerceIn(0, 2)
-        val accent = if (!symbols) Layouts.accents(lang)[key.label] else null
-        val secondary = if (!symbols) Layouts.secondary(key.label) else null
-        val text = accent ?: secondary ?: return
+        val variants = Layouts.variants(key.label, lang, symbols)
+        if (variants.isEmpty()) return
+
+        // Un seul choix possible : inutile d'ouvrir un menu, on insere directement.
+        if (variants.size == 1) {
+            p.longPressDone = true
+            val upper = (shift || caps) || (p.instantFired && p.instantWasShifted)
+            val out = if (upper) variants[0].uppercase() else variants[0]
+            if (p.instantFired) listener.onDelete()
+            listener.onText(out)
+            if (shift && !caps) shift = false
+            pointers.remove(id)
+            invalidate()
+            return
+        }
+
+        // Plusieurs choix : on ouvre un menu que l'utilisateur parcourt du doigt.
         p.longPressDone = true
-        val upper = (shift || caps) || (p.instantFired && p.instantWasShifted)
-        val out = if (accent != null && upper) text.uppercase() else text
-        if (p.instantFired) listener.onDelete()
-        listener.onText(out)
-        if (accent != null && shift && !caps) shift = false
-        pointers.remove(id)
+        if (p.instantFired) {
+            listener.onDelete()
+            p.instantFired = false
+        }
+        popupKey = key
+        popupVariants = variants
+        popupIndex = 0
+        popupPointerId = id
+        feedback()
         invalidate()
+    }
+
+    /** Ferme le menu de variantes ; [commit] insere le choix en cours. */
+    private fun closePopup(commit: Boolean) {
+        val variants = popupVariants
+        val index = popupIndex
+        popupKey = null
+        popupVariants = emptyList()
+        popupPointerId = -1
+        popupRects.clear()
+        if (commit && index in variants.indices) {
+            val upper = shift || caps
+            val chosen = variants[index]
+            val out = if (upper && chosen.length == 1 && chosen[0].isLetter())
+                chosen.uppercase() else chosen
+            listener.onText(out)
+            if (shift && !caps) shift = false
+        }
+        invalidate()
+    }
+
+    /** Met a jour la variante survolee par le doigt. */
+    private fun updatePopupSelection(x: Float, y: Float) {
+        if (popupRects.isEmpty()) return
+        var best = -1
+        var bestDist = Float.MAX_VALUE
+        for ((i, r) in popupRects.withIndex()) {
+            // On ne compare que l'axe horizontal : le doigt peut sortir vers le bas
+            val cx = r.centerX()
+            val d = abs(x - cx)
+            if (d < bestDist) {
+                bestDist = d
+                best = i
+            }
+        }
+        if (best >= 0 && best != popupIndex) {
+            popupIndex = best
+            feedback()
+            invalidate()
+        }
     }
 
     /** Suppression repetee ; efface par mot apres un moment. */
@@ -1034,6 +1160,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val id = event.getPointerId(i)
                 val x = event.getX(i)
                 val y = event.getY(i)
+                // Un nouvel appui ailleurs ferme le menu sans rien ecrire
+                if (popupKey != null) {
+                    closePopup(false)
+                    pointers.clear()
+                    pressedKey = null
+                    return true
+                }
+
                 val key = keyAt(x, y) ?: return true
 
                 val edit = editModeListener
@@ -1074,6 +1208,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
             MotionEvent.ACTION_MOVE -> {
                 if (editModeListener != null) return true
+
+                // Menu de variantes ouvert : le doigt choisit, rien d'autre ne bouge
+                if (popupKey != null) {
+                    val idx = event.findPointerIndex(popupPointerId)
+                    if (idx >= 0) updatePopupSelection(event.getX(idx), event.getY(idx))
+                    return true
+                }
+
                 for (i in 0 until event.pointerCount) {
                     val id = event.getPointerId(i)
                     val p = pointers[id] ?: continue
@@ -1106,7 +1248,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     if (p.longPressDone) continue
 
                     // Construction du trace de glissement
-                    if (id == swipePointerId) {
+                    if (id == swipePointerId && popupKey == null) {
                         val last = swipePath.lastOrNull()
                         val moved = last == null ||
                                 hypot(x - last[0], y - last[1]) > dp(4f)
@@ -1156,6 +1298,16 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 val i = event.actionIndex
                 val id = event.getPointerId(i)
+
+                // Menu de variantes : on insere le choix en cours
+                if (popupKey != null && id == popupPointerId) {
+                    val commit = event.actionMasked != MotionEvent.ACTION_CANCEL
+                    closePopup(commit)
+                    pointers.remove(id)
+                    pressedKey = null
+                    invalidate()
+                    return true
+                }
 
                 val edit = editModeListener
                 if (edit != null) {
