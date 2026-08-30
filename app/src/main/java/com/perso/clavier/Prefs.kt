@@ -111,7 +111,7 @@ class Prefs(context: Context) {
 
     /** 0 = classique (au relachement), 1 = instantane (des le contact). */
     var instantKey: Boolean
-        get() = sp.getBoolean("instant_key", true)
+        get() = sp.getBoolean("instant_key", false)
         set(v) { sp.edit().putBoolean("instant_key", v).apply() }
 
     /** 30 = tres reactif, 200 = plus tolerant. Pilote les delais d'appui long. */
@@ -121,14 +121,14 @@ class Prefs(context: Context) {
 
     /** Marge invisible autour des touches, en dp. */
     var touchMargin: Int
-        get() = sp.getInt("touch_margin", 6)
+        get() = sp.getInt("touch_margin", 10)
         set(v) { sp.edit().putInt("touch_margin", v).apply() }
 
     // ----- Effet visuel a la frappe -----
 
     /** 0 = aucun, 1 = couleur, 2 = onde, 3 = zoom, 4 = eclat, 5 = etincelles */
     var pressEffect: Int
-        get() = sp.getInt("press_effect", 2)
+        get() = sp.getInt("press_effect", 1)
         set(v) { sp.edit().putInt("press_effect", v).apply() }
 
     /** Duree de l'effet en millisecondes. */
@@ -241,6 +241,16 @@ class Prefs(context: Context) {
     fun clearUnpinnedClips() {
         saveClips(clips().filter { it.second })
     }
+
+    /** Mode simple : barre d'outils reduite, comme un clavier classique. */
+    var simpleMode: Boolean
+        get() = sp.getBoolean("simple_mode", false)
+        set(v) { sp.edit().putBoolean("simple_mode", v).apply() }
+
+    /** Premier lancement : pour proposer l'assistant de configuration. */
+    var firstRun: Boolean
+        get() = sp.getBoolean("first_run", true)
+        set(v) { sp.edit().putBoolean("first_run", v).apply() }
 
     // ----- Sons, police, themes par application -----
 
@@ -559,7 +569,7 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putBoolean("sound", v).apply() }
 
     var keyHeight: Int
-        get() = sp.getInt("height", 52)
+        get() = sp.getInt("height", 56)
         set(v) { sp.edit().putInt("height", v).apply() }
 
     var textSize: Int

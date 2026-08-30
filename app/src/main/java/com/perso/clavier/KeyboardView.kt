@@ -409,7 +409,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             canvas.drawText(label, rect.centerX(), ty, textPaint)
         }
 
-        val tools = listOf(
+        val tools = if (prefs.simpleMode) listOf(
+            Key("😀", CODE_EMOJI),
+            Key("📋", CODE_PASTE),
+            Key("⚙️", CODE_SETTINGS)
+        ) else listOf(
             Key("😀", CODE_EMOJI),
             Key("GIF", CODE_GIF),
             Key("📋", CODE_PASTE),
@@ -460,8 +464,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 for (i in 0 until 3) {
                     val r = RectF(sugW * i, toolsH, sugW * (i + 1), toolsH + sugH)
                     if (i < suggestions.size) {
-                        val label = if (i == 0 && highlightIndex == 1)
-                            "\u201C" + suggestions[i] + "\u201D" else suggestions[i]
+                        val label = suggestions[i]
                         topItem(
                             Key(label, CODE_SUG - i), r, sp(15f),
                             active = i == highlightIndex
@@ -592,14 +595,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
         }
         return best
-    }
-
-    /** Touches qui peuvent partir des le contact (pas celles a appui long ou a glissement). */
-    private fun isInstantKey(key: Key): Boolean = when (key.code) {
-        CODE_DEL, CODE_SPACE, CODE_ENTER, CODE_PASTE, CODE_EMOJI, CODE_GIF,
-        CODE_SETTINGS, CODE_TRANSLATE, CODE_LANG, CODE_SHIFT, CODE_SYM -> false
-        else -> key.code >= 0 &&
-                !(!symbols && Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(key.label))
     }
 
     private fun rectOf(key: Key): RectF? = keyRects.firstOrNull { it.first === key }?.second
@@ -756,7 +751,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 spaceCursor = false
                 longPressConsumed = false
                 feedback()
-                addRipple(key)
 
                 // Delais adaptes a la sensibilite, avec un plancher :
                 // sans lui, une sensibilite elevee transformait un simple appui en appui long.
@@ -773,16 +767,31 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                         handler.postDelayed(accentRunnable, delay(380, 300))
                 }
 
-                // Frappe instantanee : la lettre part des le contact
-                if (prefs.instantKey && isInstantKey(key)) {
-                    handleKey(key)
-                    instantDone = true
-                } else {
-                    instantDone = false
-                }
+                instantDone = false
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
+                // Glisser le doigt change la touche selectionnee, comme sur les
+                // claviers habituels : on peut corriger avant de lever le doigt.
+                val cur = pressedKey
+                if (cur != null && cur.code != CODE_SPACE && !spaceCursor && !longPressConsumed) {
+                    val over = keyAt(event.x, event.y)
+                    if (over != null && over !== cur) {
+                        handler.removeCallbacksAndMessages(null)
+                        pressedKey = over
+                        // Nouvelle touche : on reprogramme ses appuis longs
+                        val f2 = prefs.sensitivity.coerceIn(30, 200) / 100f
+                        when {
+                            over.code == CODE_DEL ->
+                                handler.postDelayed(repeatDelete, (400 * f2).toLong().coerceAtLeast(320))
+                            over.code >= 0 && !symbols &&
+                                    Layouts.accents(prefs.langIndex.coerceIn(0, 2)).containsKey(over.label) ->
+                                handler.postDelayed(accentRunnable, (380 * f2).toLong().coerceAtLeast(300))
+                        }
+                        feedback()
+                        invalidate()
+                    }
+                }
                 if (pressedKey?.code == CODE_SPACE) {
                     val dx = event.x - downX
                     val threshold = dp(10f + prefs.sensitivity / 12f)
@@ -817,8 +826,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val key = pressedKey
                 pressedKey = null
                 if (key != null) {
+                    pressTimes[key.label] = System.currentTimeMillis()
                     flashKey = key
                     flashUntil = System.currentTimeMillis() + 160
+                    if (event.actionMasked == MotionEvent.ACTION_UP &&
+                        !longPressConsumed && !spaceCursor
+                    ) addRipple(key)
                 }
                 invalidate()
                 if (key != null && !longPressConsumed && !spaceCursor && !instantDone &&

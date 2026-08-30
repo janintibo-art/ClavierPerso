@@ -155,6 +155,11 @@ class SettingsActivity : Activity() {
             setPadding(0, dp(6), 0, dp(16))
         })
 
+        root.addView(switchRow("Mode simple (clavier classique)", prefs.simpleMode) {
+            applySimpleMode(it)
+        })
+        root.addView(hint("En mode simple, la barre du haut ne garde que les émojis, le presse-papiers et les réglages."))
+
         root.addView(button("① Activer le clavier") {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         })
@@ -305,10 +310,10 @@ class SettingsActivity : Activity() {
 
         // ----- Sensibilite -----
         root.addView(section("Sensibilité du clavier ⚡"))
-        root.addView(switchRow("Frappe instantanée (dès le contact du doigt)", prefs.instantKey) {
-            prefs.instantKey = it
-            preview.refresh()
-        })
+        root.addView(hint(
+            "Comme sur un clavier classique, la lettre s'écrit quand tu lèves le doigt : " +
+                    "tu peux glisser vers une touche voisine pour corriger avant de lâcher."
+        ))
         root.addView(hint("Réactivité : à gauche = très rapide (appuis longs plus courts), à droite = plus tolérant"))
         root.addView(seek(30, 200, prefs.sensitivity) {
             prefs.sensitivity = it
@@ -635,6 +640,11 @@ class SettingsActivity : Activity() {
         val scroll = ScrollView(this)
         scroll.addView(root)
         setContentView(scroll)
+
+        if (prefs.firstRun) {
+            prefs.firstRun = false
+            scroll.post { welcomeDialog() }
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -969,6 +979,45 @@ class SettingsActivity : Activity() {
             }
             .setNegativeButton("Fermer", null)
             .show()
+    }
+
+    /** Proposition de reglage au premier lancement. */
+    private fun welcomeDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Bienvenue 👋")
+            .setMessage(
+                "Comment veux-tu commencer ?\n\n" +
+                        "• SIMPLE : un clavier classique, comme celui de Samsung. " +
+                        "Tu pourras activer les extras plus tard.\n\n" +
+                        "• COMPLET : tous les outils (GIF, IA, traduction, correction)."
+            )
+            .setPositiveButton("Simple") { _, _ ->
+                applySimpleMode(true)
+            }
+            .setNegativeButton("Complet") { _, _ ->
+                applySimpleMode(false)
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun applySimpleMode(simple: Boolean) {
+        prefs.simpleMode = simple
+        if (simple) {
+            prefs.instantKey = false
+            prefs.keyPopup = true
+            prefs.autoCorrect = true
+            prefs.numberRow = false
+            prefs.pressEffect = 1
+            prefs.keyHeight = 58
+            prefs.rgbMode = 0
+        }
+        Toast.makeText(
+            this,
+            if (simple) "Mode simple activé" else "Mode complet activé",
+            Toast.LENGTH_SHORT
+        ).show()
+        recreate()
     }
 
     private fun alert(title: String, message: String) {
