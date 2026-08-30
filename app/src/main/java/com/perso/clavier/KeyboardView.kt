@@ -22,6 +22,7 @@ import android.renderscript.RenderScript
 import android.renderscript.ScriptIntrinsicBlur
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.sin
 
 class KeyboardView(context: Context, private val listener: Listener) : View(context) {
@@ -42,6 +43,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onAiFollowUp(instruction: String)
         fun onDeleteWord()
         fun onVoiceInput()
+        fun onSwipeWord(candidates: List<String>)
         fun onMoveCursor(delta: Int)
         fun onClipboardPanel()
         fun onRewrite()
@@ -209,6 +211,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
         }
     }
+
+    fun isShiftActive(): Boolean = shift || caps
 
     fun autoShift() {
         if (!caps) {
@@ -556,6 +560,24 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             rowIndex++
         }
 
+        // Trace du glissement
+        if (swiping && swipePath.size > 1) {
+            swipePaint.color = colAccent()
+            swipePaint.strokeWidth = dp(5f)
+            var prev = swipePath.first()
+            var i = 1
+            while (i < swipePath.size) {
+                val cur = swipePath[i]
+                // Le trace s'estompe vers le debut
+                val alpha = (60 + 195 * i / swipePath.size).coerceIn(40, 255)
+                swipePaint.alpha = alpha
+                canvas.drawLine(prev[0], prev[1], cur[0], cur[1], swipePaint)
+                prev = cur
+                i++
+            }
+            swipePaint.alpha = 255
+        }
+
         drawRipples(canvas)
 
         // Bulle d'apercu au-dessus de la touche pressee
@@ -732,6 +754,27 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private val pointers = HashMap<Int, Pointer>()
 
+    /** Trace du glissement en cours (coordonnees ecran). */
+    private val swipePath = ArrayList<FloatArray>()
+    private var swiping = false
+    private var swipePointerId = -1
+    private val swipePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+
+    /** Centres des touches lettres, pour la reconnaissance du glissement. */
+    private fun letterKeyPositions(): List<SwipeEngine.KeyPos> =
+        keyRects.filter { it.first.code >= 0 && it.first.label.length == 1 }
+            .map { (k, r) -> SwipeEngine.KeyPos(k.label, r.centerX(), r.centerY()) }
+
+    private fun averageKeyWidth(): Float {
+        val list = keyRects.filter { it.first.code >= 0 }
+        if (list.isEmpty()) return dp(34f)
+        return list.map { it.second.width() }.average().toFloat()
+    }
+
     private fun delayFor(base: Int, floor: Int): Long {
         val f = prefs.sensitivity.coerceIn(30, 200) / 100f
         return (base * f).toLong().coerceAtLeast(floor.toLong())
@@ -825,6 +868,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val p = Pointer(key, x, y, System.currentTimeMillis())
                 pointers[id] = p
                 pressedKey = key
+
+                // Depart possible d'un glissement : uniquement sur une lettre,
+                // et seulement si aucun autre doigt n'est deja pose.
+                if (prefs.swipeEnabled && !symbols && key.code >= 0 &&
+                    key.label.length == 1 && pointers.size == 1
+                ) {
+                    swipePointerId = id
+                    swipePath.clear()
+                    swipePath.add(floatArrayOf(x, y))
+                } else {
+                    swipePointerId = -1
+                }
                 pressTimes[key.label] = System.currentTimeMillis()
                 feedback()
                 scheduleLongPress(id, key)
@@ -864,6 +919,25 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
                     if (p.longPressDone) continue
 
+                    // Construction du trace de glissement
+                    if (id == swipePointerId) {
+                        val last = swipePath.lastOrNull()
+                        val moved = last == null ||
+                                hypot(x - last[0], y - last[1]) > dp(4f)
+                        if (moved) swipePath.add(floatArrayOf(x, y))
+                        if (!swiping) {
+                            val d0 = swipePath.first()
+                            if (hypot(x - d0[0], y - d0[1]) > dp(26f)) {
+                                swiping = true
+                                cancelLongPress(id)
+                            }
+                        }
+                        if (swiping) {
+                            invalidate()
+                            continue
+                        }
+                    }
+
                     // Le doigt glisse vers une autre touche : on suit
                     val over = keyAt(x, y)
                     if (over != null && over !== p.key) {
@@ -898,6 +972,34 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 }
 
                 cancelLongPress(id)
+
+                // Fin d'un glissement : on tente de reconnaitre un mot
+                if (id == swipePointerId && swiping) {
+                    swiping = false
+                    swipePointerId = -1
+                    pointers.remove(id)
+                    pressedKey = null
+                    val pathCopy = ArrayList(swipePath)
+                    val keysCopy = letterKeyPositions()
+                    val kw = averageKeyWidth()
+                    swipePath.clear()
+                    invalidate()
+                    val lang = prefs.langIndex
+                    Thread {
+                        val words = try {
+                            SwipeEngine.recognize(context, lang, pathCopy, keysCopy, kw)
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        handler.post { listener.onSwipeWord(words) }
+                    }.start()
+                    return true
+                }
+                if (id == swipePointerId) {
+                    swipePointerId = -1
+                    swipePath.clear()
+                }
+
                 val p = pointers.remove(id)
                 pressedKey = pointers.values.lastOrNull()?.key
                 if (p != null) {

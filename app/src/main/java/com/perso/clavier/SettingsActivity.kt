@@ -121,6 +121,15 @@ class SettingsActivity : Activity() {
             Toast.makeText(this@SettingsActivity, "Disponible dans le vrai clavier", Toast.LENGTH_SHORT).show()
         }
 
+        override fun onSwipeWord(candidates: List<String>) {
+            if (candidates.isEmpty()) {
+                Toast.makeText(this@SettingsActivity, "Aucun mot reconnu", Toast.LENGTH_SHORT).show()
+                return
+            }
+            testField.append(candidates.first() + " ")
+            preview.suggestions = candidates.drop(1).take(3)
+        }
+
         override fun onDeleteWord() {
             val t = testField.text
             val s2 = t.toString().trimEnd()
@@ -350,6 +359,11 @@ class SettingsActivity : Activity() {
         })
         root.addView(hint("Évite que le clavier surgisse tout seul en revenant dans une application (Termux, navigateur…)."))
         root.addView(hint("Appui long sur la barre d'espace : dictée vocale 🎤"))
+        root.addView(switchRow("Glisser pour écrire (swipe)", prefs.swipeEnabled) {
+            prefs.swipeEnabled = it
+            preview.refresh()
+        })
+        root.addView(hint("Fais glisser ton doigt d'une lettre à l'autre sans le lever : le mot s'écrit tout seul. Essaie sur l'aperçu !"))
 
         // ----- Confort -----
         root.addView(section("Confort de prise en main"))

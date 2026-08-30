@@ -418,6 +418,38 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     /** Efface le mot entier a gauche du curseur. */
+    /** Mot reconnu par glissement : on l'ecrit et on propose les alternatives. */
+    override fun onSwipeWord(candidates: List<String>) {
+        val ic = currentInputConnection ?: return
+        if (candidates.isEmpty()) {
+            keyboardView?.suggestions = emptyList()
+            return
+        }
+        var word = candidates.first()
+        // Majuscule si on est en debut de phrase
+        if (keyboardView?.isShiftActive() == true) {
+            word = word.replaceFirstChar { it.uppercase() }
+        }
+        val prev = previousWord()
+        val before = ic.getTextBeforeCursor(1, 0)?.toString() ?: ""
+        val prefix = if (before.isNotEmpty() && !before.last().isWhitespace()) " " else ""
+        ic.beginBatchEdit()
+        if (composing.isNotEmpty()) ic.deleteSurroundingText(composing.length, 0)
+        ic.commitText(prefix + word + " ", 1)
+        ic.endBatchEdit()
+        if (!incognito) prefs().learnWord(word.lowercase(), prev)
+        composing.setLength(0)
+        lastWord = word.lowercase()
+        lastAutoCorrect = null
+        pendingCorrection = null
+        swipeAlternatives = candidates
+        // Les autres possibilites restent proposees dans la barre
+        keyboardView?.suggestions = candidates.drop(1).take(3)
+        keyboardView?.highlightIndex = -1
+    }
+
+    private var swipeAlternatives: List<String> = emptyList()
+
     override fun onDeleteWord() {
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(120, 0)?.toString() ?: ""
@@ -950,6 +982,25 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onSuggestion(raw: String) {
         val ic = currentInputConnection ?: return
+
+        // Remplacement du mot obtenu par glissement
+        if (swipeAlternatives.isNotEmpty() && raw in swipeAlternatives) {
+            val old = swipeAlternatives.first()
+            val before = ic.getTextBeforeCursor(old.length + 1, 0)?.toString() ?: ""
+            if (before.trimEnd().endsWith(old, ignoreCase = true)) {
+                ic.beginBatchEdit()
+                ic.deleteSurroundingText(before.length, 0)
+                ic.commitText(raw + " ", 1)
+                ic.endBatchEdit()
+                if (!incognito) prefs().learnWord(raw.lowercase(), lastWord)
+                lastWord = raw.lowercase()
+                swipeAlternatives = emptyList()
+                resync()
+                updateSuggestions()
+                return
+            }
+        }
+        swipeAlternatives = emptyList()
 
         // Code recu par SMS
         val code = pendingSmsCode

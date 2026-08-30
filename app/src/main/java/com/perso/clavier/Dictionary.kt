@@ -90,6 +90,9 @@ object Dictionary {
         }
     }
 
+    /** Entrees du dictionnaire, pour la reconnaissance du glissement. */
+    fun entriesFor(context: Context, lang: Int): List<Entry> = index(context, lang).sorted
+
     fun contains(context: Context, lang: Int, word: String): Boolean =
         index(context, lang).norms.contains(normalize(word))
 

@@ -251,6 +251,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("show_on_tap", true)
         set(v) { sp.edit().putBoolean("show_on_tap", v).apply() }
 
+    /** Glisser le doigt sur les lettres pour ecrire un mot. */
+    var swipeEnabled: Boolean
+        get() = sp.getBoolean("swipe", true)
+        set(v) { sp.edit().putBoolean("swipe", v).apply() }
+
     /** Appui long sur ⌫ : efface mot par mot apres 1,6 s. */
     var deleteByWord: Boolean
         get() = sp.getBoolean("del_word", true)
