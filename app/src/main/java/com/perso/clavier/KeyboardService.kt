@@ -492,8 +492,15 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
         Toast.makeText(this, "🤖 " + mode.short + "…", Toast.LENGTH_SHORT).show()
+        prefs().rememberAiMode(mode.short)
+        val extra = if (mode.short == "Mon style") styleSamples() else ""
+        val system = AiClient.buildSystem(
+            prefs(),
+            if (extra.isEmpty()) mode.system else mode.system + "\n\n" + extra,
+            fieldContext(request)
+        )
         runOnline { session ->
-            val raw = AiClient.generate(prefs(), mode.system, request)
+            val raw = AiClient.generate(prefs(), system, request)
             postIfCurrent(session) {
                 if (raw == null) {
                     Toast.makeText(
@@ -514,6 +521,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
                             c.endBatchEdit()
                             aiUndo = request to result
                             lastAiResult = result
+                            prefs().addAiHistory(result)
                             resync()
                             updateSuggestions()
                             val via = AiClient.lastProvider.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""
@@ -870,6 +878,29 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
     /** Mot situe deux positions avant : sert a la prediction par trigramme. */
     private fun wordBeforePrevious(): String = wordBeforeLast
 
+    /**
+     * Texte deja present dans le champ, hors demande en cours : sert de contexte
+     * a l'assistant (message auquel on repond, debut de courrier...).
+     */
+    private fun fieldContext(request: String): String {
+        if (!prefs().aiUseContext) return ""
+        val ic = currentInputConnection ?: return ""
+        val whole = ((ic.getTextBeforeCursor(3000, 0)?.toString() ?: "") +
+                (ic.getTextAfterCursor(3000, 0)?.toString() ?: "")).trim()
+        if (whole.length <= request.length + 4) return ""
+        return whole.replace(request, " ").trim()
+    }
+
+    /** Exemples d'ecriture de l'utilisateur, pour le mode « Ecrire a ma facon ». */
+    private fun styleSamples(): String {
+        val words = prefs().wordCounts().entries
+            .sortedByDescending { it.value }
+            .take(40)
+            .joinToString(", ") { it.key }
+        return if (words.isBlank()) "" else
+            "Mots que l'utilisateur emploie le plus souvent : " + words + "."
+    }
+
     private var suggestionSeq = 0
     private var pendingCorrection: String? = null
     private val suggestionRunnable = Runnable { computeSuggestions() }
@@ -904,7 +935,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
         // Juste apres une reponse de l'IA : propositions de suivi
         if (lastAiResult != null) {
-            kb.suggestions = listOf("✂️ Plus court", "🌍 En anglais", "🔁 Autre version")
+            kb.suggestions = listOf("✂️ Plus court", "🌍 En anglais", "🔁 Régénérer")
             kb.highlightIndex = -1
             pendingCorrection = null
             return
@@ -1209,7 +1240,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
             when {
                 raw.contains("court") -> aiFollowUp("Raccourcis ce texte au maximum en gardant le sens")
                 raw.contains("anglais") -> aiFollowUp("Traduis ce texte en anglais")
-                raw.contains("Autre") -> aiFollowUp("Propose une autre version, différente, du même texte")
+                raw.contains("Régénérer") || raw.contains("Autre") ->
+                    aiFollowUp("Propose une autre version, nettement différente, du même texte")
                 else -> {}
             }
             return

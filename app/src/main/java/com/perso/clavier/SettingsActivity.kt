@@ -809,6 +809,33 @@ class SettingsActivity : Activity() {
                     "Le résultat remplace ta demande, prêt à envoyer. ⌫ annule."
         ))
         root.addView(button("⚡ Remplir automatiquement (Groq, xAI…)") { aiPresetDialog() })
+        root.addView(hint("Ce que l'IA doit savoir sur toi : prénom, tutoiement, signature, ton habituel. Appliqué à toutes tes demandes."))
+        root.addView(EditText(this).apply {
+            hint = "Ex. : je m'appelle Janintibo, je tutoie, je signe « A+ »"
+            setText(prefs.aiPersona)
+            textSize = 14f
+            minLines = 2
+            gravity = Gravity.TOP
+            background = rounded(Color.parseColor(Palette.CARD))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            lp.topMargin = dp(8)
+            layoutParams = lp
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(sq: Editable?) { prefs.aiPersona = sq.toString() }
+                override fun beforeTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(sq: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
+        })
+        root.addView(switchRow("L'IA tient compte du texte déjà écrit", prefs.aiUseContext) {
+            prefs.aiUseContext = it
+        })
+        root.addView(hint("Utile pour répondre à un message : l'IA lit ce qui est dans le champ sans que tu le retapes."))
+        root.addView(button("🕘 Historique des réponses IA") { aiHistoryDialog() })
+
         root.addView(button("🧪 Tester la clé IA") {
             Thread {
                 val r = AiClient.test(Prefs(this))
@@ -1261,6 +1288,29 @@ class SettingsActivity : Activity() {
             Toast.LENGTH_SHORT
         ).show()
         recreate()
+    }
+
+    /** Les dernieres reponses produites par l'assistant, a recopier au besoin. */
+    private fun aiHistoryDialog() {
+        val history = prefs.aiHistory()
+        if (history.isEmpty()) {
+            Toast.makeText(this, "Aucune réponse pour l'instant", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = history.map { it.replace("\n", " ").take(70) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Réponses récentes")
+            .setItems(labels) { _, which ->
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Réponse IA", history[which]))
+                Toast.makeText(this, "Copié dans le presse-papiers", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Tout effacer") { _, _ ->
+                prefs.clearAiHistory()
+                Toast.makeText(this, "Historique effacé", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Fermer", null)
+            .show()
     }
 
     private fun alert(title: String, message: String) {

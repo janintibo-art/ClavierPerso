@@ -91,6 +91,25 @@ object AiClient {
         }
     }
 
+    /**
+     * Compose la consigne systeme finale : consigne du mode, style personnel
+     * de l'utilisateur, puis contexte du champ de saisie.
+     */
+    fun buildSystem(prefs: Prefs, modeSystem: String, context: String = ""): String {
+        val sb = StringBuilder(modeSystem)
+        val persona = prefs.aiPersona.trim()
+        if (persona.isNotEmpty()) {
+            sb.append("\n\nÀ propos de l'utilisateur, à respecter : ")
+            sb.append(persona)
+        }
+        if (prefs.aiUseContext && context.isNotBlank()) {
+            sb.append("\n\nContexte déjà présent dans le champ de saisie ")
+            sb.append("(sers-t'en pour comprendre la situation, mais ne le recopie pas) :\n")
+            sb.append(context.trim().take(1200))
+        }
+        return sb.toString()
+    }
+
     /** Nettoie les preambules et guillemets que l'IA ajoute parfois. */
     fun cleanOutput(raw: String): String {
         var r = raw.trim()

@@ -61,7 +61,34 @@ class AiPanel(
             orientation = VERTICAL
             setPadding(dp(10), dp(2), dp(10), dp(10))
         }
-        AiModes.list.forEach { mode ->
+
+        // Les modes recemment utilises remontent en tete
+        val recent = prefs.recentAiModes()
+        val ordered = AiModes.list.sortedBy { m ->
+            val i = recent.indexOf(m.short)
+            if (i >= 0) i else 100 + AiModes.list.indexOf(m)
+        }
+        if (recent.isNotEmpty()) {
+            list.addView(TextView(context).apply {
+                text = "Récemment utilisés"
+                textSize = 12f
+                setTextColor(prefs.colorText)
+                alpha = 0.65f
+                setPadding(dp(6), dp(2), dp(6), dp(4))
+            })
+        }
+        var separatorAdded = recent.isEmpty()
+        ordered.forEachIndexed { index, mode ->
+            if (!separatorAdded && recent.indexOf(mode.short) < 0) {
+                separatorAdded = true
+                list.addView(TextView(context).apply {
+                    text = "Tous les modes"
+                    textSize = 12f
+                    setTextColor(prefs.colorText)
+                    alpha = 0.65f
+                    setPadding(dp(6), dp(10), dp(6), dp(4))
+                })
+            }
             list.addView(LinearLayout(context).apply {
                 orientation = VERTICAL
                 background = GradientDrawable().apply {

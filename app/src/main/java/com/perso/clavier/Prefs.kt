@@ -460,6 +460,47 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putBoolean("incognito", v).apply() }
 
     /** Autorise les services web publics de secours quand aucune clé personnelle ne répond. */
+    // ----- Assistant IA -----
+
+    /** Consignes personnelles ajoutees a chaque demande (nom, tutoiement, signature...). */
+    var aiPersona: String
+        get() = sp.getString("ai_persona", "") ?: ""
+        set(v) { sp.edit().putString("ai_persona", v.trim().take(400)).apply() }
+
+    /** L'IA tient compte du texte deja present dans le champ. */
+    var aiUseContext: Boolean
+        get() = sp.getBoolean("ai_use_context", true)
+        set(v) { sp.edit().putBoolean("ai_use_context", v).apply() }
+
+    /** Derniers modes IA utilises, du plus recent au plus ancien. */
+    fun recentAiModes(): List<String> =
+        (sp.getString("ai_recent", "") ?: "").split("\u0001").filter { it.isNotBlank() }
+
+    fun rememberAiMode(short: String) {
+        val list = ArrayList(recentAiModes())
+        list.remove(short)
+        list.add(0, short)
+        while (list.size > 5) list.removeAt(list.size - 1)
+        sp.edit().putString("ai_recent", list.joinToString("\u0001")).apply()
+    }
+
+    /** Historique des reponses produites par l'assistant. */
+    fun aiHistory(): List<String> =
+        (sp.getString("ai_history", "") ?: "").split("\u0002").filter { it.isNotBlank() }
+
+    fun addAiHistory(text: String) {
+        if (text.isBlank()) return
+        val list = ArrayList(aiHistory())
+        list.remove(text)
+        list.add(0, text.take(1500))
+        while (list.size > 15) list.removeAt(list.size - 1)
+        sp.edit().putString("ai_history", list.joinToString("\u0002")).apply()
+    }
+
+    fun clearAiHistory() {
+        sp.edit().remove("ai_history").apply()
+    }
+
     var allowPublicFallbacks: Boolean
         get() = sp.getBoolean("public_fallbacks", true)
         set(v) { sp.edit().putBoolean("public_fallbacks", v).apply() }

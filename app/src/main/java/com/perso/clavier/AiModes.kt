@@ -87,6 +87,37 @@ object AiModes {
                     "Réponds UNIQUEMENT avec le message réécrit."
         ),
         Mode(
+            "🌍 Traduire ma réponse", "Trad-rép",
+            "Écris ta réponse en français, elle part traduite",
+            "L'utilisateur écrit une réponse en français à un message qu'il a reçu " +
+                    "dans une autre langue. Traduis sa réponse dans la langue du message " +
+                    "reçu si elle est déductible du contexte, sinon en anglais. " +
+                    "Réponds UNIQUEMENT avec la traduction, sans guillemets ni commentaire."
+        ),
+        Mode(
+            "📋 Développer mes notes", "Notes",
+            "Des mots-clés : « rdv 14h dentiste annuler »",
+            "L'utilisateur donne des mots-clés télégraphiques. Rédige à partir d'eux " +
+                    "un message complet, poli et naturel, sans rien inventer d'essentiel. " +
+                    "Réponds UNIQUEMENT avec le message final."
+        ),
+        Mode(
+            "🔎 Extraire l'essentiel", "Extraire",
+            "Colle un long texte : dates, montants, adresses",
+            "Extrait du texte fourni les informations concrètes : dates, heures, " +
+                    "montants, adresses, numéros, noms et actions à faire. " +
+                    "Présente-les en liste courte, une par ligne, avec un tiret. " +
+                    "N'ajoute aucun commentaire."
+        ),
+        Mode(
+            "✍️ Écrire à ma façon", "Mon style",
+            "Ce que tu veux dire, écrit avec tes tournures",
+            "Rédige le message demandé en imitant la façon d'écrire de l'utilisateur " +
+                    "telle qu'elle apparaît dans les exemples fournis : vocabulaire, " +
+                    "longueur des phrases, ponctuation, niveau de langue. " +
+                    "Réponds UNIQUEMENT avec le message final."
+        ),
+        Mode(
             "💻 Commande Termux", "Termux",
             "Décris ce que tu veux faire : « créer un dépôt git »",
             "Tu es un assistant Termux sur Android. L'utilisateur décrit ce qu'il veut faire, " +
