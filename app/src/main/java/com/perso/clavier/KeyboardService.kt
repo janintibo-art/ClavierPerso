@@ -256,6 +256,23 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         else (300 * resources.displayMetrics.density).toInt()
     }
 
+    /**
+     * Hauteur d'un panneau affiche AU-DESSUS du clavier (GIF).
+     * Le clavier reste entierement visible : on borne le panneau a une part
+     * de l'espace disponible, sinon la rangee du bas sort de l'ecran et la
+     * touche Entree devient inaccessible.
+     */
+    private fun overlayPanelHeight(): Int {
+        val metrics = resources.displayMetrics
+        val screen = metrics.heightPixels
+        val kb = panelHeight()
+        val scale = prefs().panelHeightScale.coerceIn(35, 80) / 100f
+        // On laisse au minimum le clavier plus une marge confortable
+        val maxByScreen = (screen * 0.9f - kb).toInt()
+        val wanted = (kb * scale).toInt()
+        return wanted.coerceAtMost(maxByScreen).coerceAtLeast((160 * metrics.density).toInt())
+    }
+
     private fun showPanel(view: View, keepKeyboard: Boolean = false) {
         hidePanel()
         if (keepKeyboard) {
@@ -301,7 +318,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         showPanel(
             GifPanel(
-                this, prefs(), (panelHeight() * 0.95f).toInt(),
+                this, prefs(), overlayPanelHeight(),
                 onCommit = { file -> commitGif(file) },
                 onBack = { hidePanel() }
             ),

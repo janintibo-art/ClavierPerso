@@ -109,7 +109,7 @@ class GifPanel(
                     setColor(prefs.colorSpecial)
                     cornerRadius = dp(14).toFloat()
                 }
-                setPadding(dp(12), dp(7), dp(12), dp(7))
+                setPadding(dp(11), dp(5), dp(11), dp(5))
                 val lp = LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
@@ -232,7 +232,7 @@ class GifPanel(
                 val iv = ImageView(context).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     setBackgroundColor(prefs.colorSpecial)
-                    layoutParams = LayoutParams(0, dp(100), 1f).apply {
+                    layoutParams = LayoutParams(0, dp(88), 1f).apply {
                         setMargins(dp(4), dp(4), dp(4), dp(4))
                     }
                     setOnClickListener { download(gifUrl) }

@@ -339,6 +339,26 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("dbl_tap_select", true)
         set(v) { sp.edit().putBoolean("dbl_tap_select", v).apply() }
 
+    /** Hauteur de la barre de suggestions, en dp (26 a 48). */
+    var suggestionBarHeight: Int
+        get() = sp.getInt("sug_bar_h", 34)
+        set(v) { sp.edit().putInt("sug_bar_h", v).apply() }
+
+    /** Hauteur de la barre d'outils, en dp (28 a 48). */
+    var toolbarHeight: Int
+        get() = sp.getInt("toolbar_h", 34)
+        set(v) { sp.edit().putInt("toolbar_h", v).apply() }
+
+    /** Hauteur de la rangee du bas, en pourcentage des autres rangees. */
+    var bottomRowScale: Int
+        get() = sp.getInt("bottom_row_scale", 88)
+        set(v) { sp.edit().putInt("bottom_row_scale", v).apply() }
+
+    /** Part de l'ecran occupee par les panneaux (emoji, GIF), en pourcentage. */
+    var panelHeightScale: Int
+        get() = sp.getInt("panel_scale", 62)
+        set(v) { sp.edit().putInt("panel_scale", v).apply() }
+
     /** Hauteur du clavier en pourcentage (redimensionnement global). */
     var keyboardScale: Int
         get() = sp.getInt("kb_scale", 100)

@@ -13,6 +13,8 @@ object LanguageModel {
 
     private var loaded = false
     private val table = HashMap<String, Entry>(512)
+    /** Suites connues apres deux mots : « je suis » -> en, desole, tres. */
+    private val trigrams = HashMap<String, List<String>>(256)
     private var maxFreq = 1
 
     private fun load(context: Context) {
@@ -38,6 +40,24 @@ object LanguageModel {
             }
         } catch (_: Exception) {
         }
+        try {
+            context.assets.open("lm3_fr.txt").bufferedReader().forEachLine { line ->
+                val parts = line.split('\t')
+                if (parts.size < 2) return@forEachLine
+                val nexts = parts[1].split(',').mapNotNull { pair ->
+                    val kv = pair.split(':')
+                    if (kv.size == 2) kv[0] else null
+                }
+                if (nexts.isNotEmpty()) trigrams[parts[0]] = nexts
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Suites probables apres les deux mots donnes. */
+    fun nextAfterTwo(context: Context, w1: String, w2: String): List<String> {
+        load(context)
+        return trigrams[w1.lowercase() + " " + w2.lowercase()] ?: emptyList()
     }
 
     /** Frequence relative d'un mot : 0 (inconnu) a 100 (tres courant). */

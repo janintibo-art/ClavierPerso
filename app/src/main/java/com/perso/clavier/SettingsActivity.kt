@@ -471,6 +471,36 @@ class SettingsActivity : Activity() {
             prefs.oneHandMode = it
             preview.refresh()
         })
+        root.addView(hint("Hauteur de la barre de suggestions"))
+        root.addView(seek(26, 48, prefs.suggestionBarHeight) {
+            prefs.suggestionBarHeight = it
+            preview.refresh()
+        })
+        root.addView(hint("Hauteur de la barre d'outils (😀 📋 ✅ 🤖 🌍)"))
+        root.addView(seek(26, 48, prefs.toolbarHeight) {
+            prefs.toolbarHeight = it
+            preview.refresh()
+        })
+        root.addView(hint("Hauteur de la rangée du bas, en % des autres rangées"))
+        root.addView(seek(60, 100, prefs.bottomRowScale) {
+            prefs.bottomRowScale = it
+            preview.refresh()
+        })
+        root.addView(hint("Hauteur des panneaux émojis et GIF, en % du clavier"))
+        root.addView(seek(35, 80, prefs.panelHeightScale) {
+            prefs.panelHeightScale = it
+        })
+        root.addView(button("📐 Réglage compact (gagner de la place)") {
+            prefs.suggestionBarHeight = 30
+            prefs.toolbarHeight = 30
+            prefs.bottomRowScale = 82
+            prefs.keyHeight = 50
+            prefs.keySpacing = 2
+            prefs.panelHeightScale = 55
+            Toast.makeText(this, "Clavier compacté", Toast.LENGTH_SHORT).show()
+            recreate()
+        })
+
         root.addView(hint("Taille globale du clavier"))
         root.addView(seek(70, 140, prefs.keyboardScale) {
             prefs.keyboardScale = it

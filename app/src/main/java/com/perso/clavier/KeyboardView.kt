@@ -162,6 +162,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     /** Hauteur d'une rangee, mise a l'echelle globale du clavier. */
     private fun rowHeight() = dp(prefs.keyHeight.toFloat()) * (prefs.keyboardScale / 100f)
+
+    /** Hauteur de la rangee du bas, souvent inutilement haute. */
+    private fun bottomRowHeight() = rowHeight() * (prefs.bottomRowScale.coerceIn(60, 100) / 100f)
     private fun sp(v: Float) = v * resources.displayMetrics.scaledDensity
 
     fun refresh() {
@@ -351,15 +354,17 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         return (a shl 24) or (color and 0x00FFFFFF)
     }
 
-    private fun toolsHeight() = dp(40f)
+    private fun toolsHeight() = dp(prefs.toolbarHeight.toFloat())
     private fun sugHeight() =
-        if (privateMode || prefs.suggestionsEnabled || translateMode != null || aiMode != null) dp(42f) else 0f
+        if (privateMode || prefs.suggestionsEnabled || translateMode != null || aiMode != null)
+            dp(prefs.suggestionBarHeight.toFloat()) else 0f
     private fun barHeight() = toolsHeight() + sugHeight()
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = (barHeight() + rowHeight() * rows().size +
-                dp(12f) + dp(prefs.bottomPadding.toFloat())).toInt()
+        val rowCount = rows().size
+        val h = (barHeight() + rowHeight() * (rowCount - 1) + bottomRowHeight() +
+                dp(8f) + dp(prefs.bottomPadding.toFloat())).toInt()
         setMeasuredDimension(w, h)
     }
 
@@ -541,17 +546,21 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
         val sidePad = zoneLeft + dp(4f)
         val usable = zoneW - dp(8f)
-        var y = barHeight() + dp(4f)
+        var y = barHeight() + dp(3f)
 
         val now = System.currentTimeMillis()
         val flashing = flashKey != null && now < flashUntil
         var rowIndex = 0
-        for (row in rows()) {
+        val allRows = rows()
+        val lastRow = allRows.size - 1
+        for (row in allRows) {
+            // La rangee du bas (espace, entree) peut etre plus basse que les autres
+            val thisRowH = if (rowIndex == lastRow) bottomRowHeight() else rowH
             val totalW = row.map { it.weight }.sum()
             var x = sidePad
             for (key in row) {
                 val kw = usable * key.weight / totalW
-                val rect = RectF(x + margin, y + margin, x + kw - margin, y + rowH - margin)
+                val rect = RectF(x + margin, y + margin, x + kw - margin, y + thisRowH - margin)
                 keyRects.add(key to rect)
 
                 val isAccent = key === pressedKey ||
@@ -614,7 +623,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
                 x += kw
             }
-            y += rowH
+            y += thisRowH
             rowIndex++
         }
 

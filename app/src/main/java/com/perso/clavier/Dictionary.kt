@@ -23,7 +23,19 @@ object Dictionary {
     }
 
     /** Nombre de mots verifies en tete du dictionnaire. */
-    private const val VERIFIED_LIMIT = 60000
+    /**
+     * Les mots avant cette position sont verifies : vocabulaire courant,
+     * domaines specialises, infinitifs et pluriels. Au-dela commencent les
+     * formes produites par conjugaison automatique.
+     */
+    private const val VERIFIED_LIMIT = 27056
+
+    /**
+     * Diviseur du rang dans le score. Il doit suivre la taille du dictionnaire :
+     * avec 130 000 mots, un diviseur trop petit ecrasait les mots specialises
+     * derriere des mots courants sans rapport.
+     */
+    private const val RANK_DIVISOR = 170
 
     private class Index(entries: List<Entry>) {
         /** Triee par forme normalisee : permet la recherche dichotomique des completions. */
@@ -188,6 +200,10 @@ object Dictionary {
             // 1. Deux mots de contexte : la prediction la plus fiable
             if (beforePrevious.isNotBlank()) {
                 prefs.nextAfterTwo(beforePrevious, previousWord).forEach { merged.add(it) }
+                if (l == 0) {
+                    LanguageModel.nextAfterTwo(context, beforePrevious, previousWord)
+                        .forEach { merged.add(it) }
+                }
             }
             // 2. Habitudes personnelles sur un mot
             prefs.nextWords(previousWord).forEach { merged.add(it) }
@@ -200,8 +216,12 @@ object Dictionary {
         val near = neighbors(l)
         val counts = prefs.wordCounts()
         val nextAfterPrev = if (previousWord.isNotBlank()) prefs.nextWords(previousWord) else emptyList()
-        val nextAfterTwo = if (beforePrevious.isNotBlank() && previousWord.isNotBlank())
-            prefs.nextAfterTwo(beforePrevious, previousWord) else emptyList()
+        val nextAfterTwo = if (beforePrevious.isNotBlank() && previousWord.isNotBlank()) {
+            val personal = prefs.nextAfterTwo(beforePrevious, previousWord)
+            val model = if (l == 0)
+                LanguageModel.nextAfterTwo(context, beforePrevious, previousWord) else emptyList()
+            (personal + model).distinct()
+        } else emptyList()
         // Modele de langue embarque (francais uniquement)
         val useLm = l == 0
         val lmNext = if (useLm && previousWord.isNotBlank())
@@ -276,6 +296,7 @@ object Dictionary {
             if (idx.sorted[mid].norm < p) lo = mid + 1 else hi = mid
         }
         var examined = 0
+        var completions = 0
         var i = lo
         while (i < idx.sorted.size && examined < 3000) {
             val e = idx.sorted[i]
@@ -283,8 +304,9 @@ object Dictionary {
             examined++
             i++
             if (e.norm.length == p.length) continue
+            completions++
             val base = if (typedIsKnown) 60 else 110
-            var sc = base + (e.norm.length - p.length) * 4 + e.rank / 45
+            var sc = base + (e.norm.length - p.length) * 2 + e.rank / RANK_DIVISOR
             // Une forme generee automatiquement reste derriere les mots verifies
             if (!e.verified) sc += 260
             if (useLm) {
@@ -303,6 +325,9 @@ object Dictionary {
             p.length <= 6 -> 22
             else -> 30
         }
+        // Si ce qui est tape est le debut d'un mot existant, l'utilisateur est
+        // probablement en train de l'ecrire : les corrections passent apres.
+        val correctionPenalty = if (completions > 0 && p.length >= 4) 170 else 0
         val span = if (p.length <= 4) 1 else 2
         val firstOk = HashSet<Char>().apply {
             add(p[0])
@@ -319,7 +344,8 @@ object Dictionary {
                         var base = if (typedIsKnown) 520 else 0
                         // Les formes generees ne corrigent qu'a defaut de mot verifie
                         if (!e.verified) base += 200
-                        offer(e.word, base + d * 14 + e.rank / 45, d)
+                        base += correctionPenalty
+                        offer(e.word, base + d * 14 + e.rank / RANK_DIVISOR, d)
                     }
                 }
             }
@@ -337,7 +363,7 @@ object Dictionary {
                 }
                 if (e.norm.length <= p.length) continue
                 if (distance(p, e.norm.substring(0, p.length), 10, near) <= 10) {
-                    offer(e.word, 800 + e.rank / 45)
+                    offer(e.word, 800 + e.rank / RANK_DIVISOR)
                     j++
                 }
             }
